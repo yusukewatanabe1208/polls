@@ -1,0 +1,18 @@
+# 依存関係
+node_modules
+
+# ビルド生成物
+.next
+next-env.d.ts
+*.tsbuildinfo
+
+# 秘密情報（.env.example を参照）
+.env
+.env.local
+.env*.local
+
+# ローカルモードのデータ・アップロード
+.data
+
+# OS
+.DS_Store
