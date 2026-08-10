@@ -1,12 +1,13 @@
 "use client";
 
-import { useOptimistic } from "react";
 import { toggleCommentLike } from "@/app/actions";
+import { useToggle } from "@/lib/useToggle";
 
 /**
  * コメントのいいね。
- * 押した瞬間にハートと件数が変わるよう楽観更新し、サーバーの結果で上書きする。
- * （以前はサーバーアクション直結で、押しても画面が変わったように見えなかった）
+ *
+ * 押した瞬間にハートと件数が変わり、通信は裏で進む（useToggle）。
+ * サーバー側は toggle_comment_like RPC の1往復だけで終わる。
  */
 export function CommentLikeButton({
   commentId,
@@ -19,32 +20,27 @@ export function CommentLikeButton({
   likeCount: number;
   likedByMe: boolean;
 }) {
-  const [state, setState] = useOptimistic({ liked: likedByMe, count: likeCount });
+  const { on, toggle } = useToggle("like", commentId, likedByMe);
+  // 自分の分だけ足し引きする（他の人の増減はページを開き直したときに反映される）
+  const count = Math.max(0, likeCount + (on ? 1 : 0) - (likedByMe ? 1 : 0));
 
   return (
-    <form
-      action={async (formData: FormData) => {
-        setState({
-          liked: !state.liked,
-          count: Math.max(0, state.count + (state.liked ? -1 : 1)),
-        });
-        await toggleCommentLike(formData);
-      }}
-    >
+    // action にサーバーアクションを渡してあるので、JSが無い環境でも動く
+    <form action={toggleCommentLike} onSubmit={toggle}>
       <input type="hidden" name="comment_id" value={commentId} />
       <input type="hidden" name="question_id" value={questionId} />
       <button
         type="submit"
-        aria-pressed={state.liked}
-        aria-label={state.liked ? "いいねを取り消す" : "いいね"}
-        className={`-mx-2 flex min-h-9 items-center gap-1.5 rounded-full px-2 text-sm transition ${
-          state.liked ? "text-rose-600" : "text-muted hover:text-rose-500"
+        aria-pressed={on}
+        aria-label={on ? "いいねを取り消す" : "いいね"}
+        className={`-mx-2 flex min-h-9 items-center gap-1.5 rounded-full px-2 text-sm transition active:scale-95 ${
+          on ? "text-rose-600" : "text-muted hover:text-rose-500"
         }`}
       >
         <span aria-hidden className="text-base leading-none">
-          {state.liked ? "♥" : "♡"}
+          {on ? "♥" : "♡"}
         </span>
-        <span className="tabular-nums">{state.count > 0 ? state.count : ""}</span>
+        <span className="tabular-nums">{count > 0 ? count : ""}</span>
       </button>
     </form>
   );

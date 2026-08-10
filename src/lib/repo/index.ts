@@ -1,22 +1,15 @@
 import "server-only";
 import { cache } from "react";
-import { getBackend } from "../config";
-import * as local from "./local";
 import * as supa from "./supabase";
 
 /**
- * データアクセスの入口。環境に応じて Supabase / ローカルJSON を切り替える。
+ * データアクセスの入口。保存先はSupabaseのみ。
  * 画面・サーバーアクションはこのモジュールだけを参照する。
  */
 
-type Repo = typeof local;
+type Repo = typeof supa;
 
-/** local と supabase で同じ関数を持つことを型で保証する */
-const _typecheck: Repo = supa;
-void _typecheck;
-
-// バックエンドは実行中に変わらないので、モジュール読み込み時に1回だけ決める
-const impl: Repo = getBackend() === "supabase" ? supa : local;
+const impl: Repo = supa;
 
 /**
  * 読み取りは React の cache() でリクエスト単位にメモ化する。
@@ -39,6 +32,7 @@ export const repo: Repo = {
   getAnsweredCount: cache(impl.getAnsweredCount),
   getRecentAnswers: cache(impl.getRecentAnswers),
   getRanking: cache(impl.getRanking),
+  getUserReport: cache(impl.getUserReport),
   isFavorited: cache(impl.isFavorited),
   getFavorites: cache(impl.getFavorites),
   getLikedComments: cache(impl.getLikedComments),

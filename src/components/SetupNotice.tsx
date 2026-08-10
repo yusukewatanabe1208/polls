@@ -16,19 +16,13 @@ export function SetupNotice() {
           Supabase ダッシュボード → SQL Editor を開く
         </li>
         <li>
-          <code>supabase/migrations/0001_init.sql</code> を貼り付けて実行
-        </li>
-        <li>
-          続けて <code>supabase/migrations/0002_favorites_and_ranking.sql</code> を実行
+          <code>supabase/setup_all.sql</code> を丸ごと貼り付けて実行
+          （何度実行しても安全です）
         </li>
         <li>
           このページを再読み込み
         </li>
       </ol>
-      <p className="mt-3 text-xs text-amber-900">
-        すぐに動作を試したい場合は、<code>.env</code> の{" "}
-        <code>DATA_BACKEND=local</code> に変更するとSupabaseなしで全機能を使えます。
-      </p>
       <Link href="/setup" className="btn btn-ghost btn-sm mt-3">
         接続状態を確認する
       </Link>

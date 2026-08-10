@@ -31,7 +31,6 @@ export default async function TryPage({
     return (
       <Wall
         answers={[]}
-        questions={[]}
         results={[]}
         message="いま出せる質問がありません。ログインすると全ての質問に回答できます。"
       />
@@ -73,7 +72,7 @@ export default async function TryPage({
     const results = await Promise.all(
       answers.map((a) => repo.getTrialResult(a.id)),
     );
-    return <Wall answers={answers} questions={questions} results={results} />;
+    return <Wall answers={answers} results={results} />;
   }
 
   // 次の未回答の質問
@@ -188,12 +187,10 @@ function Distribution({
 /** 5問終わり（またはお試しできない）ときのログイン案内 */
 function Wall({
   answers,
-  questions,
   results,
   message,
 }: {
   answers: TrialAnswer[];
-  questions: TrialQuestion[];
   results: (TrialResult | null)[];
   message?: string;
 }) {

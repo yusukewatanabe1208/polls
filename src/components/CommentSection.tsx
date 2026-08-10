@@ -2,6 +2,7 @@ import Link from "next/link";
 import { deleteComment } from "@/app/actions";
 import { specialtyName } from "@/lib/master";
 import type { CommentView } from "@/lib/repo/shapes";
+import { CommentActions } from "./CommentActions";
 import { CommentForm } from "./CommentForm";
 import { CommentLikeButton } from "./CommentLikeButton";
 
@@ -75,8 +76,6 @@ function Comment({
   canPost: boolean;
   replies: CommentView[];
 }) {
-  const replyToggleId = `reply-${comment.id}`;
-
   return (
     <li className="border-t border-line pt-3 first:border-t-0 first:pt-0">
       <AuthorLine
@@ -90,38 +89,15 @@ function Comment({
         {comment.body}
       </p>
 
-      {/* 返信欄の開閉はCSSで行うためJavaScript不要。peerは対象より前に置く */}
-      {canPost && (
-        <input type="checkbox" id={replyToggleId} className="peer sr-only" />
-      )}
-
-      <div className="mt-0.5 flex items-center gap-4">
-        <CommentLikeButton
-          commentId={comment.id}
-          questionId={questionId}
-          likeCount={comment.likeCount}
-          likedByMe={comment.likedByMe}
-        />
-        {canPost && (
-          <label
-            htmlFor={replyToggleId}
-            className="-mx-2 flex min-h-9 cursor-pointer items-center rounded-full px-2 text-sm text-muted hover:text-brand"
-          >
-            返信
-          </label>
-        )}
-      </div>
-
-      {/* 返信フォームは横に並べず、コメントの下に全幅で開く */}
-      {canPost && (
-        <div className="mt-2 hidden peer-checked:block">
-          <CommentForm
-            questionId={questionId}
-            parentId={comment.id}
-            placeholder={`@${comment.authorUsername} への返信`}
-          />
-        </div>
-      )}
+      {/* いいねと返信。返信フォームはこの下に全幅で開く */}
+      <CommentActions
+        commentId={comment.id}
+        questionId={questionId}
+        likeCount={comment.likeCount}
+        likedByMe={comment.likedByMe}
+        authorUsername={comment.authorUsername}
+        canReply={canPost}
+      />
 
       {replies.length > 0 && (
         <ul className="mt-3 space-y-3 border-l-2 border-line pl-3">

@@ -128,7 +128,12 @@ $$;
 -- ---------------------------------------------------------------------
 -- 公開プロフィール（work_prefecture を含まない）§49
 -- ---------------------------------------------------------------------
-create or replace view public.public_profiles
+-- create or replace view は列の削除・並べ替えができない。
+-- あとの migration（0010）で列が増えるため、既存DBに流し直すと
+-- 「cannot drop columns from view」で失敗する。
+-- 何度流しても通るよう、毎回作り直す。
+drop view if exists public.public_profiles;
+create view public.public_profiles
 with (security_invoker = false) as
   select id, username, specialty_id, is_physician, is_admin, created_at
   from public.profiles
@@ -394,6 +399,10 @@ $$;
 -- 回答済みの場合のみ返す。投稿者がA/Bどちらを選んだかも併せて返すため、
 -- 他人の votes を直接読ませずに済むよう SECURITY DEFINER にしている。
 -- ---------------------------------------------------------------------
+-- あとの migration（0009）で parent_id・いいね数が増え、戻り値の形が変わる。
+-- create or replace function は戻り値の型を変えられないため、
+-- 既存DBに流し直せるよう毎回作り直す。
+drop function if exists public.get_question_comments(uuid);
 create or replace function public.get_question_comments(p_question_id uuid)
 returns table (
   id uuid,

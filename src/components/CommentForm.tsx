@@ -8,19 +8,27 @@ const initial: FormState = {};
 export function CommentForm({
   questionId,
   parentId,
-  placeholder = "判断の理由や、前提が変わる条件などを書いてみましょう（500文字まで）",
+  placeholder = "判断の理由や、前提が変わる条件など（500文字まで）",
+  autoFocus = false,
+  onDone,
 }: {
   questionId: string;
   /** 返信先のコメント。未指定なら質問への直接のコメント */
   parentId?: string;
   placeholder?: string;
+  /** 返信を開いたときに入力欄へフォーカスする */
+  autoFocus?: boolean;
+  /** 送信できたときに呼ばれる（返信欄を閉じるのに使う） */
+  onDone?: () => void;
 }) {
   const [state, formAction, pending] = useActionState(addComment, initial);
   const formRef = useRef<HTMLFormElement>(null);
 
   useEffect(() => {
-    if (state.success) formRef.current?.reset();
-  }, [state.success]);
+    if (!state.success) return;
+    formRef.current?.reset();
+    onDone?.();
+  }, [state.success, onDone]);
 
   return (
     <form ref={formRef} action={formAction} className="space-y-2">
@@ -28,7 +36,8 @@ export function CommentForm({
       {parentId && <input type="hidden" name="parent_id" value={parentId} />}
       <textarea
         name="body"
-        className="field min-h-20"
+        autoFocus={autoFocus}
+        className="field min-h-24 w-full"
         maxLength={500}
         placeholder={placeholder}
         required

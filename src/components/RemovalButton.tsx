@@ -1,5 +1,6 @@
 import { requestRemoval } from "@/app/actions";
 import { REMOVAL_THRESHOLD } from "@/lib/limits";
+import { SubmitButton } from "./SubmitButton";
 
 /**
  * 不適切な質問の削除推奨。
@@ -27,12 +28,12 @@ export function RemovalButton({
   return (
     <form action={requestRemoval}>
       <input type="hidden" name="question_id" value={questionId} />
-      <button
-        type="submit"
+      <SubmitButton
+        pendingLabel="送信中…"
         className="btn w-full border border-red-200 bg-red-50 text-red-700 active:bg-red-100"
       >
         不適切につき削除推奨
-      </button>
+      </SubmitButton>
       <p className="mt-1 text-center text-xs text-muted">
         {isAdmin
           ? "管理者のため、押すとすぐに削除されます。"

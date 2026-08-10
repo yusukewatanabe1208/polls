@@ -69,9 +69,22 @@ export function computeSelfExcluded(
 }
 
 /**
+ * 直近の回答ほど重くする重み（半減期20問）。
+ * rank は1が最新。20問さかのぼるごとに重みが半分になる。
+ * 古い回答もゼロにはならず、いつまでも少しだけ効き続ける。
+ */
+export const RECENCY_HALF_LIFE = 20;
+
+export function recencyWeight(rank: number): number {
+  return Math.pow(0.5, (rank - 1) / RECENCY_HALF_LIFE);
+}
+
+/**
  * get_user_ordinariness(user_id) RPC 相当。
- * - 普通度: 対象質問における「本人以外で自分と同じ回答をした割合」の平均
- * - 多数派一致率: 多数派が存在する対象質問のうち、多数派と一致した割合
+ * - 普通度: 対象質問における「本人以外で自分と同じ回答をした割合」の加重平均。
+ *   回答の新しい順に recencyWeight() の重みを掛ける（要件：直近20問を重く）。
+ * - 多数派一致率: 多数派が存在する対象質問のうち、多数派と一致した割合。
+ *   「割合」を表す別の指標なので重み付けしない。
  */
 export function computeUserMetrics(params: {
   userId: string;
@@ -88,7 +101,7 @@ export function computeUserMetrics(params: {
     (v) => v.user_id === userId && visibleQuestionIds.has(v.question_id),
   );
 
-  const rates: number[] = [];
+  const eligible: { rate: number; createdAt: string; questionId: string }[] = [];
   let majorityDenominator = 0;
   let majorityNumerator = 0;
 
@@ -102,7 +115,11 @@ export function computeUserMetrics(params: {
       counts,
     );
     if (!r.eligible || r.agreementRate === null) continue;
-    rates.push(r.agreementRate);
+    eligible.push({
+      rate: r.agreementRate,
+      createdAt: mv.created_at,
+      questionId: mv.question_id,
+    });
     // 50:50 は多数派が存在しないため分子・分母どちらにも含めない
     if (r.majorityChoice !== null) {
       majorityDenominator += 1;
@@ -110,16 +127,27 @@ export function computeUserMetrics(params: {
     }
   }
 
+  // 新しい順に並べて重みを掛ける（SQL側の row_number() と同じ並び）
+  const ordered = [...eligible].sort((a, b) => {
+    if (a.createdAt !== b.createdAt) return a.createdAt < b.createdAt ? 1 : -1;
+    return a.questionId < b.questionId ? -1 : 1;
+  });
+
+  let weightedSum = 0;
+  let weightTotal = 0;
+  ordered.forEach((e, i) => {
+    const w = recencyWeight(i + 1);
+    weightedSum += e.rate * w;
+    weightTotal += w;
+  });
+
   return {
-    ordinariness:
-      rates.length === 0
-        ? null
-        : rates.reduce((s, x) => s + x, 0) / rates.length,
+    ordinariness: weightTotal === 0 ? null : weightedSum / weightTotal,
     majority_agreement_rate:
       majorityDenominator === 0
         ? null
         : (majorityNumerator / majorityDenominator) * 100,
-    eligible_question_count: rates.length,
+    eligible_question_count: eligible.length,
     answered_question_count: myVotes.length,
     posted_question_count: params.postedQuestionCount,
   };

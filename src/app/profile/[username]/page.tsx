@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { categoryName, specialtyName } from "@/lib/master";
 import { displayScore } from "@/lib/metrics";
-import { repo } from "@/lib/repo";
+import { repo, type AuthoredQuestion } from "@/lib/repo";
 
 export const dynamic = "force-dynamic";
 
@@ -20,15 +20,17 @@ export default async function ProfilePage({
   if (!profile) notFound();
 
   const isMe = profile.id === session.profile.id;
-  const [metrics, authored, min, receivedLikes, myComments, ranking] =
+  // 指標と偏差値は1回の問い合わせでまとめて取る（0022）
+  const [report, authored, min, receivedLikes, myComments] =
     await Promise.all([
-      repo.getUserMetrics(profile.id),
+      repo.getUserReport(profile.id),
       repo.getQuestionsByAuthor(profile.id),
       repo.getMinOtherVotes(),
       repo.getReceivedLikeCount(profile.id),
       repo.getMyComments(profile.id, 20),
-      repo.getRanking(profile.id),
     ]);
+  const metrics = report;
+  const ranking = report;
   const questions = authored.filter(
     (q) => q.status === "active" || isMe || session.profile!.is_admin,
   );
@@ -179,7 +181,12 @@ export default async function ProfilePage({
       </section>
 
       <section className="space-y-3">
-        <h2 className="text-lg font-bold">投稿した質問</h2>
+        <div className="flex items-baseline justify-between">
+          <h2 className="text-lg font-bold">投稿した質問</h2>
+          {isMe && questions.length > 0 && (
+            <span className="text-sm text-muted">{questions.length}問</span>
+          )}
+        </div>
         {questions.length === 0 ? (
           <p className="card p-5 text-sm text-muted">まだ投稿がありません。</p>
         ) : (
@@ -200,6 +207,7 @@ export default async function ProfilePage({
               <p className="mt-2 line-clamp-2 whitespace-pre-wrap text-sm">
                 {q.question_text}
               </p>
+              <QuestionOutcome question={q} minOtherVotes={min} />
             </Link>
           ))
         )}
@@ -209,6 +217,73 @@ export default async function ProfilePage({
         <p className="text-xs text-muted">
           勤務都道府県は公開されません（あなたの設定：{profile.work_prefecture}）。
         </p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * 投稿した質問が「どうなったか」。
+ *
+ * 出す内容はDB側（get_authored_questions）が絞っている。
+ *   ・回答数は投稿者本人と管理者だけに入る
+ *   ・A/Bの割れ方とコメント数は、見ている人が回答済みのときだけ入る
+ * 値が null のときは、その人には見せてよい情報ではないので何も描かない。
+ */
+function QuestionOutcome({
+  question,
+  minOtherVotes,
+}: {
+  question: AuthoredQuestion;
+  minOtherVotes: number;
+}) {
+  const { voteCount, aCount, bCount, commentCount, viewerAnswered } = question;
+  if (voteCount === null) return null;
+
+  // 自分がまだ答えていない質問は、割れ方を見せずに回答へ誘導する
+  if (!viewerAnswered) {
+    return (
+      <div className="mt-2.5 flex flex-wrap items-center gap-2 text-xs">
+        <span className="tabular-nums font-semibold">{voteCount}人が回答</span>
+        <span className="text-muted">
+          自分が回答すると割れ方を見られます
+        </span>
+      </div>
+    );
+  }
+
+  const total = (aCount ?? 0) + (bCount ?? 0);
+  const aRatio = total === 0 ? 0 : ((aCount ?? 0) / total) * 100;
+  // 指標の対象になるのは「投稿者以外の回答」が規定数に達してから
+  const collecting = voteCount - 1 < minOtherVotes;
+
+  return (
+    <div className="mt-2.5 space-y-1.5">
+      <div className="flex flex-wrap items-center gap-2 text-xs">
+        <span className="tabular-nums font-semibold">{voteCount}人が回答</span>
+        {commentCount !== null && commentCount > 0 && (
+          <span className="text-muted tabular-nums">
+            コメント{commentCount}件
+          </span>
+        )}
+        {collecting && <span className="text-muted">回答募集中</span>}
+      </div>
+
+      {total > 0 && (
+        <>
+          {/* A（左）とB（右）の割合。数字と棒の向きを合わせる */}
+          <div className="flex h-2 overflow-hidden rounded-full bg-slate-200">
+            <div className="bg-brand" style={{ width: `${aRatio}%` }} />
+          </div>
+          <div className="flex justify-between text-xs tabular-nums">
+            <span>
+              {question.option_a} {Math.round(aRatio)}%
+            </span>
+            <span>
+              {question.option_b} {Math.round(100 - aRatio)}%
+            </span>
+          </div>
+        </>
       )}
     </div>
   );

@@ -2,7 +2,11 @@
  * 指標計算ロジックの自己チェック（要件定義 §19, §24, §28 の例をそのまま検証）
  * 実行: node --experimental-strip-types scripts/check-metrics.ts
  */
-import { computeSelfExcluded, computeUserMetrics } from "../src/lib/metrics.ts";
+import {
+  computeSelfExcluded,
+  computeUserMetrics,
+  recencyWeight,
+} from "../src/lib/metrics.ts";
 import type { Choice, Vote } from "../src/lib/types.ts";
 
 let failures = 0;
@@ -13,11 +17,13 @@ function check(name: string, actual: unknown, expected: unknown) {
   console.log(`${ok ? "PASS" : "FAIL"} ${name}${ok ? "" : ` (actual=${JSON.stringify(actual)} expected=${JSON.stringify(expected)})`}`);
 }
 
+/** 本人の回答日時を指定できるようにする（普通度は直近ほど重いため） */
 const makeVotes = (
   questionId: string,
   a: number,
   b: number,
   meChoice?: Choice,
+  meVotedAt = "",
 ): Vote[] => {
   const votes: Vote[] = [];
   for (let i = 0; i < a; i++)
@@ -25,7 +31,7 @@ const makeVotes = (
   for (let i = 0; i < b; i++)
     votes.push({ id: `b${i}`, question_id: questionId, user_id: `other-b-${i}`, choice: "B", created_at: "" });
   if (meChoice)
-    votes.push({ id: "me", question_id: questionId, user_id: "me", choice: meChoice, created_at: "" });
+    votes.push({ id: "me", question_id: questionId, user_id: "me", choice: meChoice, created_at: meVotedAt });
   return votes;
 };
 
@@ -60,15 +66,24 @@ const makeVotes = (
   check("§28 本人以外19人は対象外", r.eligible, false);
 }
 
+// 直近ほど重い重み（半減期20問）
+{
+  check("重み 最新は1.0", recencyWeight(1), 1);
+  check("重み 20問前で約0.52", Math.round(recencyWeight(20) * 100) / 100, 0.52);
+  check("重み 21問前で0.5", Math.round(recencyWeight(21) * 100) / 100, 0.5);
+  check("重み 100問前でも0より大きい", recencyWeight(100) > 0, true);
+}
+
 // §16-§24 総合: 3問（うち1問は50:50、1問は票数不足）
+// 普通度は直近ほど重い加重平均。Q2（新しい・50%）が Q1（古い・75%）より重い。
 {
   const votes: Vote[] = [
     // Q1: 本人以外 A:18 B:6 → 本人A → 一致率75%、多数派一致
-    ...makeVotes("Q1", 18, 6, "A"),
+    ...makeVotes("Q1", 18, 6, "A", "2024-01-01T00:00:00Z"),
     // Q2: 本人以外 A:10 B:10 → 本人A → 一致率50%、多数派なし（多数派一致率の対象外）
-    ...makeVotes("Q2", 10, 10, "A"),
+    ...makeVotes("Q2", 10, 10, "A", "2024-02-01T00:00:00Z"),
     // Q3: 本人以外 A:5 B:5 → 票数不足で全指標の対象外
-    ...makeVotes("Q3", 5, 5, "B"),
+    ...makeVotes("Q3", 5, 5, "B", "2024-03-01T00:00:00Z"),
   ];
   const m = computeUserMetrics({
     userId: "me",
@@ -77,10 +92,39 @@ const makeVotes = (
     minOtherVotes: 20,
     postedQuestionCount: 0,
   });
-  check("総合 普通度 = (75+50)/2", m.ordinariness, 62.5);
-  check("総合 多数派一致率 = 1/1", m.majority_agreement_rate, 100);
+  // 新しい順に Q2(50%, 重み1) → Q1(75%, 重み 0.5^(1/20)=0.96594)
+  const w2 = recencyWeight(1);
+  const w1 = recencyWeight(2);
+  const expected = (50 * w2 + 75 * w1) / (w2 + w1);
+  check("総合 普通度は直近重視の加重平均", m.ordinariness, expected);
+  check("総合 単純平均(62.5)より新しいQ2に寄る", m.ordinariness! < 62.5, true);
+  check("総合 多数派一致率 = 1/1（重み付けしない）", m.majority_agreement_rate, 100);
   check("総合 対象質問数", m.eligible_question_count, 2);
   check("総合 回答数", m.answered_question_count, 3);
+}
+
+// 古い回答も影響がゼロにならない（要件）
+{
+  const many: Vote[] = [];
+  // 100問すべて一致率100%、そのあと最新の1問だけ0%
+  for (let i = 0; i < 100; i++) {
+    many.push(...makeVotes(`old${i}`, 20, 0, "A", `2024-01-01T00:00:${String(i).padStart(2, "0")}Z`));
+  }
+  many.push(...makeVotes("newest", 0, 20, "A", "2025-01-01T00:00:00Z"));
+
+  const m = computeUserMetrics({
+    userId: "me",
+    votes: many,
+    visibleQuestionIds: new Set([...Array(100).keys()].map((i) => `old${i}`).concat("newest")),
+    minOtherVotes: 20,
+    postedQuestionCount: 0,
+  });
+  // 最新が0%でも、100問ぶんの過去が効いて0にはならない
+  check("古い回答の影響はゼロにならない", m.ordinariness! > 0, true);
+  // かつ最新が重いので100%からはっきり下がる。
+  // 重みの合計は約28.5問ぶんなので、最新の0%が1問入ると 100% → 約96.5%
+  check("直近の1問がはっきり効く", m.ordinariness! < 97, true);
+  check("下がりすぎない（過去100問が支える）", m.ordinariness! > 95, true);
 }
 
 console.log(failures === 0 ? "\nすべて成功" : `\n${failures}件 失敗`);

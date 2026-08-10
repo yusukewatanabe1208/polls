@@ -89,6 +89,20 @@ export type MyCommentView = {
   isReply: boolean;
 };
 
+/**
+ * プロフィールに出す「投稿した質問」。
+ * 反響の数値は見る人によって出し分ける（0026）。
+ *   voteCount      … 投稿者本人・管理者のみ。それ以外は null
+ *   aCount/bCount/commentCount … 見ている人が回答済みのときのみ。それ以外は null
+ */
+export type AuthoredQuestion = Question & {
+  voteCount: number | null;
+  aCount: number | null;
+  bCount: number | null;
+  commentCount: number | null;
+  viewerAnswered: boolean;
+};
+
 export type AdminQuestion = Question & {
   authorUsername: string;
   voteCount: number | null;
@@ -118,6 +132,9 @@ export type RecentAnswerView = {
   majorityMatched: boolean | null;
   eligible: boolean;
 };
+
+/** 成績表・プロフィールで使う指標一式（get_user_report の戻り値） */
+export type UserReportView = UserMetrics & RankingView;
 
 export type RankingView = {
   ordinariness: number | null;

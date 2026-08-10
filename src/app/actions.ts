@@ -2,8 +2,6 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { getBackend } from "@/lib/config";
-import { getDb, newId, mutateDb } from "@/lib/db";
 import {
   CHOICE_A_LABEL,
   CHOICE_B_LABEL,
@@ -15,6 +13,7 @@ import {
 } from "@/lib/limits";
 import {
   CATEGORIES,
+  EMERGENCY_CATEGORY_ID,
   METRIC_OCCUPATION,
   QUESTION_LEVELS,
   PREFECTURES,
@@ -23,8 +22,7 @@ import {
   isQuestionLevel,
 } from "@/lib/master";
 import { repo } from "@/lib/repo";
-import { setSessionUser } from "@/lib/session";
-import { TRIAL_LIMIT, addTrialAnswer, clearTrialAnswers } from "@/lib/trial";
+import { TRIAL_LIMIT, addTrialAnswer } from "@/lib/trial";
 import {
   REPORT_REASONS,
   type Choice,
@@ -36,9 +34,6 @@ import {
 export type FormState = { error?: string; success?: string };
 
 const USERNAME_RE = /^[a-z0-9_]{3,20}$/;
-
-/** 救急カテゴリー（医師以外の既定の出題範囲） */
-const EMERGENCY_CATEGORY_ID = 8;
 
 async function currentProfile(): Promise<Profile | null> {
   const session = await repo.getSession();
@@ -78,46 +73,8 @@ export async function submitTrialAnswer(formData: FormData) {
   redirect(`/try?show=${questionId}`);
 }
 
-/** ローカルモック認証：既存のデモアカウントでログイン */
-export async function loginAsDemoUser(formData: FormData) {
-  if (getBackend() !== "local") redirect("/login");
-  const userId = String(formData.get("user_id") ?? "");
-  const user = getDb().auth_users.find((u) => u.id === userId);
-  if (!user) redirect("/login?error=notfound");
-  await setSessionUser(user.id);
-  await clearTrialAnswers();
-  const profile = getDb().profiles.find((p) => p.id === user.id);
-  redirect(profile ? "/play" : "/onboarding");
-}
-
-/** ローカルモック認証：新規アカウント作成 */
-export async function loginAsNewAccount() {
-  if (getBackend() !== "local") redirect("/login");
-  const id = newId("user");
-  const suffix = id.slice(-6);
-  mutateDb((db) => {
-    db.auth_users.push({
-      id,
-      email: `new_${suffix}@example.com`,
-      display_name: `新規ユーザー ${suffix}`,
-      provider: "google",
-      created_at: new Date().toISOString(),
-    });
-  });
-  await setSessionUser(id);
-  await clearTrialAnswers();
-  redirect("/onboarding");
-}
-
 export async function logout() {
   await repo.signOut();
-  revalidatePath("/", "layout");
-  redirect("/");
-}
-
-export async function resetDemoData() {
-  if (getBackend() !== "local") redirect("/settings");
-  await repo.resetLocalData();
   revalidatePath("/", "layout");
   redirect("/");
 }
@@ -221,7 +178,6 @@ export async function completeOnboarding(
     return { error: `登録に失敗しました: ${(e as Error).message}` };
   }
 
-  revalidatePath("/", "layout");
   redirect("/play");
 }
 
@@ -250,7 +206,8 @@ export async function updateSettings(
     return { error: `保存に失敗しました: ${(e as Error).message}` };
   }
 
-  revalidatePath("/", "layout");
+  // この画面に留まるため再描画が要る。範囲は /settings だけでよい
+  revalidatePath("/settings");
   return { success: "設定を保存しました。" };
 }
 
@@ -300,7 +257,6 @@ export async function updateQuizFilter(formData: FormData) {
     shuffle: shuffleAll ? true : formData.get("shuffle_questions") === "on",
   });
 
-  revalidatePath("/", "layout");
   redirect(shuffleAll ? "/settings?shuffled=1" : "/settings?saved=1");
 }
 
@@ -325,9 +281,9 @@ export async function submitVote(
   const result = await repo.insertVote(questionId, profile.id, choice);
   if (result.error) return { error: result.error };
 
-  revalidatePath(`/questions/${questionId}`);
+  // 同じ画面が結果表示に切り替わるので、ここは作り直しが要る。
+  // /feed は force-dynamic、/questions/[id] は /play/[id] へのリダイレクトだけなので不要。
   revalidatePath(`/play/${questionId}`);
-  revalidatePath("/feed");
   return {};
 }
 
@@ -392,9 +348,6 @@ export async function createQuestion(
   });
   if (error || !id) return { error: error ?? "投稿に失敗しました。" };
 
-  revalidatePath("/feed");
-  revalidatePath("/play");
-
   // 「投稿して次の問題へ進む」から呼ばれた場合は、投稿した質問ではなく次の未回答へ
   if (formData.get("after") === "next") {
     const next = await repo.getNextUnansweredQuestionId(profile.id, id);
@@ -443,8 +396,6 @@ export async function requestRemoval(formData: FormData) {
   const questionId = String(formData.get("question_id") ?? "");
   const { removed } = await repo.requestRemoval(questionId, profile.id);
 
-  revalidatePath("/", "layout");
-
   const next = await repo.getNextUnansweredQuestionId(profile.id, questionId);
   redirect(
     next
@@ -488,22 +439,21 @@ export async function addComment(
   });
   if (result.error) return { error: result.error };
 
-  revalidatePath(`/questions/${questionId}`);
   revalidatePath(`/play/${questionId}`);
   return { success: "コメントを投稿しました。" };
 }
 
-/** コメントへのいいね（もう一度押すと取り消し） */
+/**
+ * コメントへのいいね（もう一度押すと取り消し）。
+ * JavaScriptが無い環境向けのフォーム送信口。
+ * JSが動く場合はボタン側が /api/toggle を直接叩くので、こちらは通らない。
+ *
+ * revalidatePath は呼ばない。Next.js は revalidatePath が1つでも呼ばれると
+ * ページ全体を作り直して返すため、いいね1回に数百ミリ秒かかっていた。
+ * いいね数を出す画面はいずれも force-dynamic なので、次に開けば最新になる。
+ */
 export async function toggleCommentLike(formData: FormData) {
-  const profile = await currentProfile();
-  if (!profile) redirect("/login");
-
-  const commentId = String(formData.get("comment_id") ?? "");
-  const questionId = String(formData.get("question_id") ?? "");
-  await repo.toggleCommentLike(commentId, profile.id);
-
-  revalidatePath(`/play/${questionId}`);
-  revalidatePath("/", "layout");
+  await repo.toggleCommentLike(String(formData.get("comment_id") ?? ""));
 }
 
 /** 投稿者本人または管理者による削除 */
@@ -519,7 +469,6 @@ export async function deleteComment(formData: FormData) {
     isAdmin: profile.is_admin,
   });
 
-  revalidatePath(`/questions/${questionId}`);
   revalidatePath(`/play/${questionId}`);
   revalidatePath("/admin");
 }
@@ -536,7 +485,6 @@ export async function adminSetQuestionStatus(formData: FormData) {
 
   await repo.adminSetQuestionStatus(questionId, status);
   revalidatePath("/admin");
-  revalidatePath("/feed");
 }
 
 export async function adminResolveReport(formData: FormData) {
@@ -556,7 +504,7 @@ export async function adminUpdateMinVotes(formData: FormData) {
   const value = Number(formData.get("min_other_votes"));
   if (!Number.isFinite(value) || value < 1 || value > 1000) return;
   await repo.adminSetMinVotes(Math.floor(value));
-  revalidatePath("/", "layout");
+  revalidatePath("/admin");
 }
 
 export async function adminSetCommentStatus(formData: FormData) {
@@ -579,14 +527,14 @@ export async function adminSetCommentStatus(formData: FormData) {
 export async function purgeDemoVotesAction() {
   await requireAdmin();
   await repo.purgeDemo("votes");
-  revalidatePath("/", "layout");
+  revalidatePath("/admin");
 }
 
 export async function purgeAllDemoDataAction() {
   const admin = await requireAdmin();
   const wasDemoAccount = !!admin.is_demo;
   await repo.purgeDemo("all");
-  revalidatePath("/", "layout");
+  revalidatePath("/admin");
   if (wasDemoAccount) {
     await repo.signOut();
     redirect("/");
@@ -598,15 +546,12 @@ export async function purgeAllDemoDataAction() {
 /* お気に入り                                                           */
 /* ------------------------------------------------------------------ */
 
+/**
+ * お気に入りの追加・解除。いいねと同じくJSなし環境向けの送信口。
+ * revalidatePath を呼ばない理由も同じ。
+ */
 export async function toggleFavorite(formData: FormData) {
-  const profile = await currentProfile();
-  if (!profile) redirect("/login");
-  const questionId = String(formData.get("question_id") ?? "");
-  await repo.toggleFavorite(questionId, profile.id);
-  revalidatePath(`/questions/${questionId}`);
-  revalidatePath(`/play/${questionId}`);
-  revalidatePath("/play");
-  revalidatePath("/favorites");
+  await repo.toggleFavorite(String(formData.get("question_id") ?? ""));
 }
 
 /** 次の未回答質問へ。5問ごとに成績表を挟む */

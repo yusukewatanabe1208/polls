@@ -1,6 +1,6 @@
 import "server-only";
+import { after } from "next/server";
 import { rankFromDeviation } from "../metrics";
-import { applyQuizPreferences } from "../quizFilter";
 import { createSupabaseServerClient } from "../supabase/server";
 import type {
   Choice,
@@ -11,6 +11,7 @@ import type {
 } from "../types";
 import type {
   AdminComment,
+  AuthoredQuestion,
   AdminQuestion,
   AdminReport,
   CommentView,
@@ -27,6 +28,7 @@ import type {
   TrialQuestion,
   TrialResult,
   UserMetrics,
+  UserReportView,
 } from "./shapes";
 
 /** Supabaseバックエンド（Auth + PostgreSQL + RLS + RPC） */
@@ -68,22 +70,29 @@ function toProfile(row: PublicProfileRow): Profile {
   };
 }
 
+/**
+ * ログイン中のユーザーとプロフィール。ほぼ全ページの入口で呼ばれる。
+ *
+ * getUser() ではなく getClaims() を使う。getUser() は毎回Authサーバーに
+ * 問い合わせるため、画面を開くたびに往復が1つ増えていた。
+ * getClaims() はJWTの署名をその場で検証するので、期限内ならネットワークに出ない
+ * （検証している点は getUser() と同じで、Cookieを鵜呑みにはしていない）。
+ */
 export async function getSession(): Promise<SessionInfo> {
   const supabase = await createSupabaseServerClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return null;
+  const { data, error } = await supabase.auth.getClaims();
+  const claims = data?.claims;
+  if (error || !claims?.sub) return null;
 
   const { data: profile } = await supabase
     .from("profiles")
     .select("*")
-    .eq("id", user.id)
+    .eq("id", claims.sub)
     .maybeSingle();
 
   return {
-    userId: user.id,
-    email: user.email ?? null,
+    userId: claims.sub,
+    email: typeof claims.email === "string" ? claims.email : null,
     profile: (profile as Profile | null) ?? null,
   };
 }
@@ -131,15 +140,14 @@ export async function getProfileByUsername(
 
   const profile = toProfile(data as PublicProfileRow);
 
-  // 本人なら勤務都道府県も含めて返す（設定画面で使う）
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (user?.id === profile.id) {
+  // 本人なら勤務都道府県も含めて返す（設定画面で使う）。
+  // getUser() だとAuthサーバーへの往復が増えるので getClaims() を使う。
+  const { data: claims } = await supabase.auth.getClaims();
+  if (claims?.claims?.sub === profile.id) {
     const { data: own } = await supabase
       .from("profiles")
       .select("*")
-      .eq("id", user.id)
+      .eq("id", profile.id)
       .maybeSingle();
     if (own) return own as Profile;
   }
@@ -227,68 +235,35 @@ export async function updateQuizPreferences(input: {
   if (error) throw new Error(error.message);
 }
 
-export async function getFeed(userId: string): Promise<FeedItem[]> {
+/**
+ * フィード。絞り込み・並べ替え・コメント数までDB側で済ませて1往復にする
+ * （supabase/migrations/0021_feed_rpc.sql）。
+ * 以前は5回に分けて取得し、そのうちコメントは全件を運んでいた。
+ */
+export async function getFeed(_userId: string): Promise<FeedItem[]> {
   const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase.rpc("get_feed", { p_limit: 100 });
+  if (error || !data) return [];
 
-  const [{ data: questions }, { data: myVotes }, { data: comments }] =
-    await Promise.all([
-      supabase
-        .from("questions")
-        .select(QUESTION_COLUMNS)
-        .eq("status", "active")
-        .order("created_at", { ascending: false })
-        .limit(100),
-      supabase.from("votes").select("question_id").eq("user_id", userId),
-      // RLSにより「自分が回答済みの質問」のコメントだけが返る
-      supabase.from("comments").select("question_id").eq("status", "visible"),
-    ]);
-
-  const list = (questions ?? []) as Question[];
-  const answered = new Set((myVotes ?? []).map((v) => v.question_id as string));
-  const commentCounts = new Map<string, number>();
-  for (const c of comments ?? []) {
-    const key = c.question_id as string;
-    commentCounts.set(key, (commentCounts.get(key) ?? 0) + 1);
-  }
-
-  const authorIds = [...new Set(list.map((q) => q.author_id))];
-  const { data: authors } = authorIds.length
-    ? await supabase
-        .from("public_profiles")
-        .select("id, username, specialty_id")
-        .in("id", authorIds)
-    : { data: [] };
-  const authorMap = new Map(
-    (authors ?? []).map((a) => [
-      a.id as string,
-      { username: a.username as string, specialtyId: a.specialty_id as number },
-    ]),
-  );
-
-  const items = list
-    .map((question) => ({
-      question,
-      answered: answered.has(question.id),
-      authorUsername: authorMap.get(question.author_id)?.username ?? "unknown",
-      authorSpecialtyId: authorMap.get(question.author_id)?.specialtyId ?? 0,
-      commentCount: commentCounts.get(question.id) ?? 0,
-    }))
-    .sort((x, y) => {
-      if (x.answered !== y.answered) return x.answered ? 1 : -1;
-      return (
-        Date.parse(y.question.created_at) - Date.parse(x.question.created_at)
-      );
-    });
-
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("filter_category_ids, filter_levels, shuffle_questions")
-    .eq("id", userId)
-    .maybeSingle();
-
-  return profile
-    ? applyQuizPreferences(items, profile as never)
-    : items;
+  return (data as Record<string, unknown>[]).map((r) => ({
+    question: {
+      id: r.id as string,
+      author_id: r.author_id as string,
+      question_text: r.question_text as string,
+      option_a: r.option_a as string,
+      option_b: r.option_b as string,
+      category_id: r.category_id as number,
+      level: r.level as string,
+      status: r.status as Question["status"],
+      image_url: (r.image_url as string | null) ?? null,
+      is_demo: Boolean(r.is_demo),
+      created_at: r.created_at as string,
+    },
+    answered: Boolean(r.answered),
+    authorUsername: (r.author_username as string) ?? "unknown",
+    authorSpecialtyId: Number(r.author_specialty_id ?? 0),
+    commentCount: Number(r.comment_count ?? 0),
+  }));
 }
 
 /**
@@ -307,28 +282,34 @@ export async function getNextUnansweredQuestionId(
   return (data as string | null) ?? null;
 }
 
+/**
+ * 質問と投稿者。質問ページは必ずここを通るので1往復で済ませる（0023）。
+ * 以前は「質問を取る」→「投稿者を取る」で必ず直列に2回待っていた。
+ */
 export async function getQuestion(
   id: string,
 ): Promise<QuestionWithAuthor | null> {
   const supabase = await createSupabaseServerClient();
-  const { data } = await supabase
-    .from("questions")
-    .select(QUESTION_COLUMNS)
-    .eq("id", id)
-    .maybeSingle();
-  if (!data) return null;
-
-  const question = data as Question;
-  const { data: author } = await supabase
-    .from("public_profiles")
-    .select("username, specialty_id")
-    .eq("id", question.author_id)
-    .maybeSingle();
+  const { data, error } = await supabase.rpc("get_question_with_author", {
+    p_id: id,
+  });
+  const r = (data as Record<string, unknown>[] | null)?.[0];
+  if (error || !r) return null;
 
   return {
-    ...question,
-    authorUsername: (author?.username as string) ?? "unknown",
-    authorSpecialtyId: (author?.specialty_id as number) ?? 0,
+    id: r.id as string,
+    author_id: r.author_id as string,
+    question_text: r.question_text as string,
+    option_a: r.option_a as string,
+    option_b: r.option_b as string,
+    category_id: r.category_id as number,
+    level: r.level as string,
+    status: r.status as Question["status"],
+    image_url: (r.image_url as string | null) ?? null,
+    is_demo: Boolean(r.is_demo),
+    created_at: r.created_at as string,
+    authorUsername: (r.author_username as string) ?? "unknown",
+    authorSpecialtyId: Number(r.author_specialty_id ?? 0),
   };
 }
 
@@ -466,17 +447,37 @@ export async function uploadQuestionImage(
   return { url: data.publicUrl };
 }
 
+/**
+ * 投稿した質問と、その反響（0026）。
+ * どこまで返すかはDB側が判断する（回答前に割れ方を見せないため）。
+ */
 export async function getQuestionsByAuthor(
   authorId: string,
-): Promise<Question[]> {
+): Promise<AuthoredQuestion[]> {
   const supabase = await createSupabaseServerClient();
-  const { data } = await supabase
-    .from("questions")
-    .select(QUESTION_COLUMNS)
-    .eq("author_id", authorId)
-    .neq("status", "deleted")
-    .order("created_at", { ascending: false });
-  return (data ?? []) as Question[];
+  const { data, error } = await supabase.rpc("get_authored_questions", {
+    p_author_id: authorId,
+  });
+  if (error || !data) return [];
+
+  return (data as Record<string, unknown>[]).map((r) => ({
+    id: r.id as string,
+    author_id: r.author_id as string,
+    question_text: r.question_text as string,
+    option_a: r.option_a as string,
+    option_b: r.option_b as string,
+    category_id: r.category_id as number,
+    level: r.level as string,
+    status: r.status as Question["status"],
+    image_url: (r.image_url as string | null) ?? null,
+    is_demo: Boolean(r.is_demo),
+    created_at: r.created_at as string,
+    voteCount: r.vote_count === null ? null : Number(r.vote_count),
+    aCount: r.a_count === null ? null : Number(r.a_count),
+    bCount: r.b_count === null ? null : Number(r.b_count),
+    commentCount: r.comment_count === null ? null : Number(r.comment_count),
+    viewerAnswered: Boolean(r.viewer_answered),
+  }));
 }
 
 export async function getComments(
@@ -504,27 +505,18 @@ export async function getComments(
 }
 
 /** いいねの付け外し。戻り値は押した後の状態 */
-export async function toggleCommentLike(
-  commentId: string,
-  userId: string,
-): Promise<boolean> {
+/**
+ * いいねの切り替え。押した後の状態を返す。
+ * 誰が押したかはDB側が auth.uid() から判断するため、往復は1回で済む
+ * （supabase/migrations/0019_fast_toggles.sql）。
+ */
+export async function toggleCommentLike(commentId: string): Promise<boolean> {
   const supabase = await createSupabaseServerClient();
-  const { data } = await supabase
-    .from("comment_likes")
-    .select("id")
-    .eq("comment_id", commentId)
-    .eq("user_id", userId)
-    .maybeSingle();
-
-  if (data) {
-    await supabase.from("comment_likes").delete().eq("id", data.id as string);
-    return false;
-  }
-  const { error } = await supabase
-    .from("comment_likes")
-    .insert({ comment_id: commentId, user_id: userId });
-  if (error && error.code !== "23505") throw new Error(error.message);
-  return true;
+  const { data, error } = await supabase.rpc("toggle_comment_like", {
+    p_comment_id: commentId,
+  });
+  if (error) throw new Error(error.message);
+  return Boolean(data);
 }
 
 export async function getMyComments(
@@ -695,6 +687,62 @@ export async function getRecentAnswers(
   }));
 }
 
+/**
+ * 成績表・プロフィール用の指標一式。
+ * 以前は getUserMetrics と getRanking を両方呼び、どちらも自分の普通度を
+ * 最初から計算し直していた。1回の問い合わせにまとめる（0022 / 重み付けは0025）。
+ */
+export async function getUserReport(userId: string): Promise<UserReportView> {
+  const supabase = await createSupabaseServerClient();
+
+  // 母集団の統計が古ければ、応答を返したあとに測り直す（0018）
+  after(async () => {
+    await supabase.rpc("refresh_ordinariness_snapshot_if_stale", {});
+  });
+
+  const { data, error } = await supabase.rpc("get_user_report", {
+    p_user_id: userId,
+  });
+  const row = (data as Record<string, unknown>[] | null)?.[0];
+
+  const empty: UserReportView = {
+    ordinariness: null,
+    majority_agreement_rate: null,
+    eligible_question_count: 0,
+    answered_question_count: 0,
+    posted_question_count: 0,
+    deviation: null,
+    percentile: null,
+    rankLevel: null,
+    rankLabel: null,
+    rankDescription: null,
+    comparedUsers: 0,
+  };
+  if (error || !row) return empty;
+
+  const ordinariness =
+    row.ordinariness === null ? null : Number(row.ordinariness);
+  const deviation = row.deviation === null ? null : Number(row.deviation);
+  const band = deviation === null ? null : rankFromDeviation(deviation);
+
+  return {
+    ordinariness,
+    majority_agreement_rate:
+      row.majority_agreement_rate === null
+        ? null
+        : Number(row.majority_agreement_rate),
+    eligible_question_count: Number(row.eligible_question_count ?? 0),
+    answered_question_count: Number(row.answered_question_count ?? 0),
+    posted_question_count: Number(row.posted_question_count ?? 0),
+    deviation,
+    percentile: row.percentile === null ? null : Number(row.percentile),
+    rankLevel: band?.level ?? null,
+    rankLabel: band?.label ?? null,
+    rankDescription: band?.description ?? null,
+    comparedUsers: Number(row.compared_users ?? 0),
+  };
+}
+
 export async function getRanking(userId: string): Promise<RankingView> {
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase.rpc("get_ordinariness_ranking", {
@@ -740,26 +788,14 @@ export async function isFavorited(questionId: string, userId: string) {
   return !!data;
 }
 
-export async function toggleFavorite(
-  questionId: string,
-  userId: string,
-): Promise<boolean> {
+/** お気に入りの切り替え。いいねと同じく1往復で済ませる */
+export async function toggleFavorite(questionId: string): Promise<boolean> {
   const supabase = await createSupabaseServerClient();
-  const { data } = await supabase
-    .from("favorites")
-    .select("id")
-    .eq("question_id", questionId)
-    .eq("user_id", userId)
-    .maybeSingle();
-
-  if (data) {
-    await supabase.from("favorites").delete().eq("id", data.id as string);
-    return false;
-  }
-  await supabase
-    .from("favorites")
-    .insert({ question_id: questionId, user_id: userId });
-  return true;
+  const { data, error } = await supabase.rpc("toggle_favorite", {
+    p_question_id: questionId,
+  });
+  if (error) throw new Error(error.message);
+  return Boolean(data);
 }
 
 /** 自分がいいねしたコメント */
@@ -1003,8 +1039,4 @@ export async function purgeDemo(mode: "votes" | "all") {
     // アカウント(auth.users)の削除には service_role が必要なため、
     // supabase/purge_demo.sql をSQL Editorで実行する
   }
-}
-
-export async function resetLocalData() {
-  // Supabaseバックエンドでは無効
 }

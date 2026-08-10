@@ -1,10 +1,6 @@
 /**
- * データバックエンドの選択。
- * - supabase … Supabase（認証・DB）
- * - local    … ローカルJSON（.data/db.json）＋モック認証
- *
- * DATA_BACKEND が未設定の場合、Supabaseの環境変数が揃っていれば supabase、
- * 無ければ local を使う。
+ * Supabaseへの接続設定。
+ * データの保存先はSupabaseのみ（認証・DB・画像ストレージ）。
  */
 
 export const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
@@ -21,14 +17,3 @@ export function isSupabaseConfigured(): boolean {
     SUPABASE_KEY.trim().length > 0
   );
 }
-
-export type Backend = "supabase" | "local";
-
-export function getBackend(): Backend {
-  const explicit = process.env.DATA_BACKEND?.trim().toLowerCase();
-  if (explicit === "local") return "local";
-  if (explicit === "supabase") return "supabase";
-  return isSupabaseConfigured() ? "supabase" : "local";
-}
-
-export const isSupabaseBackend = () => getBackend() === "supabase";

@@ -18,7 +18,12 @@ comment on column public.profiles.license_number is
   '医籍登録番号。自己申告であり本サービスでは照合しない。非公開。';
 
 -- 公開ビューに本名・医籍番号が入らないことを明示的に作り直す
-create or replace view public.public_profiles
+-- create or replace view は列の削除・並べ替えができない。
+-- あとの migration（0010）で列が増えるため、既存DBに流し直すと
+-- 「cannot drop columns from view」で失敗する。
+-- 何度流しても通るよう、毎回作り直す。
+drop view if exists public.public_profiles;
+create view public.public_profiles
 with (security_invoker = false) as
   select id, username, specialty_id, is_physician, is_admin, created_at
   from public.profiles

@@ -42,6 +42,14 @@ export const CATEGORIES: Category[] = [
   "その他",
 ].map((name, i) => ({ id: i + 1, name, display_order: i + 1, active: true }));
 
+/**
+ * 「救急」カテゴリーのID。
+ * 医師以外の既定の出題範囲に使う。並び順を変えてもここが追随するよう、
+ * 数値を直接書かずに名前から引く（DB側の既定値は 0012_lock_identity.sql）。
+ */
+export const EMERGENCY_CATEGORY_ID =
+  CATEGORIES.find((c) => c.name === "救急")?.id ?? 8;
+
 export const PREFECTURES = [
   "北海道", "青森県", "岩手県", "宮城県", "秋田県", "山形県", "福島県",
   "茨城県", "栃木県", "群馬県", "埼玉県", "千葉県", "東京都", "神奈川県",

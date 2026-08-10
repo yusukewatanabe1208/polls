@@ -1,29 +1,12 @@
 "use client";
 
-import { useFormStatus } from "react-dom";
 import { toggleFavorite } from "@/app/actions";
+import { useToggle } from "@/lib/useToggle";
 
-function StarButton({ favorited }: { favorited: boolean }) {
-  const { pending } = useFormStatus();
-  // 送信中は反転した状態を先に見せる（体感を速くする）
-  const shown = pending ? !favorited : favorited;
-
-  return (
-    <button
-      type="submit"
-      aria-pressed={shown}
-      aria-label={favorited ? "お気に入りから外す" : "お気に入りに追加"}
-      className={`flex h-11 w-11 items-center justify-center rounded-xl border text-xl transition ${
-        shown
-          ? "border-amber-300 bg-amber-50 text-amber-500"
-          : "border-line bg-white text-slate-300"
-      }`}
-    >
-      ★
-    </button>
-  );
-}
-
+/**
+ * お気に入り（★）。
+ * いいねと同じく、押した瞬間に見た目が変わり通信は待たない。
+ */
 export function FavoriteButton({
   questionId,
   favorited,
@@ -31,11 +14,24 @@ export function FavoriteButton({
   questionId: string;
   favorited: boolean;
 }) {
-  // サーバーアクションを直接指定することで、JSが無効でも動作する
+  const { on, toggle } = useToggle("favorite", questionId, favorited);
+
   return (
-    <form action={toggleFavorite}>
+    // action にサーバーアクションを渡してあるので、JSが無い環境でも動く
+    <form action={toggleFavorite} onSubmit={toggle}>
       <input type="hidden" name="question_id" value={questionId} />
-      <StarButton favorited={favorited} />
+      <button
+        type="submit"
+        aria-pressed={on}
+        aria-label={on ? "お気に入りから外す" : "お気に入りに追加"}
+        className={`flex h-11 w-11 items-center justify-center rounded-xl border text-xl transition active:scale-95 ${
+          on
+            ? "border-amber-300 bg-amber-50 text-amber-500"
+            : "border-line bg-white text-slate-300"
+        }`}
+      >
+        ★
+      </button>
     </form>
   );
 }

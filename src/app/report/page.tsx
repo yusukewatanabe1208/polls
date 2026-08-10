@@ -1,7 +1,5 @@
-import { headers } from "next/headers";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ShareButtons } from "@/components/ShareButtons";
 import { RANK_BANDS, displayScore } from "@/lib/metrics";
 import { repo } from "@/lib/repo";
 
@@ -29,19 +27,16 @@ export default async function ReportPage({
       ? Math.min(Math.ceil(requested / PAGE_SIZE) * PAGE_SIZE, 500)
       : PAGE_SIZE;
 
-  const [metrics, ranking, answers, minOtherVotes] = await Promise.all([
-    repo.getUserMetrics(me.id),
-    repo.getRanking(me.id),
+  // 指標は1回の問い合わせでまとめて取る（0022）。
+  // 以前は普通度の集計を2回していた。
+  const [report, answers, minOtherVotes] = await Promise.all([
+    repo.getUserReport(me.id),
     // 次があるか判定するため1件多く取る
     repo.getRecentAnswers(me.id, limit + 1),
     repo.getMinOtherVotes(),
   ]);
-
-  // 共有URLはサーバー側で組み立てる（ハイドレーション前でも正しいURLになる）
-  const h = await headers();
-  const host = h.get("x-forwarded-host") ?? h.get("host") ?? "localhost:9001";
-  const proto = h.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
-  const shareUrl = `${proto}://${host}`;
+  const metrics = report;
+  const ranking = report;
 
   const hasMore = answers.length > limit;
   const recent = answers.slice(0, limit);
@@ -182,15 +177,6 @@ export default async function ReportPage({
           </Link>
         </div>
       </div>
-
-      {level && (
-        <ShareButtons
-          deviation={displayScore(ranking.deviation)}
-          rankLabel={ranking.rankLabel ?? ""}
-          level={level}
-          shareUrl={shareUrl}
-        />
-      )}
 
       <p className="text-center text-xs text-muted">
         多数派＝正解ではありません。ランクは判断の傾向を表すもので、

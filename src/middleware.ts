@@ -1,14 +1,15 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
-import { SUPABASE_KEY, SUPABASE_URL, getBackend } from "./lib/config";
+import { SUPABASE_KEY, SUPABASE_URL } from "./lib/config";
 
 /**
  * Supabaseのセッション（アクセストークン）を更新して Cookie に書き戻す。
- * localバックエンドのときは何もしない。
+ *
+ * getClaims() はJWTをその場で検証するだけなので、期限内ならネットワークに出ない。
+ * 期限切れのときだけ Auth サーバーに問い合わせて更新される。
+ * （以前は getUser() を使っていたため、いいね1回ごとに往復が1つ増えていた）
  */
 export async function middleware(request: NextRequest) {
-  if (getBackend() !== "supabase") return NextResponse.next({ request });
-
   let response = NextResponse.next({ request });
 
   const supabase = createServerClient(SUPABASE_URL, SUPABASE_KEY, {
@@ -28,8 +29,7 @@ export async function middleware(request: NextRequest) {
     },
   });
 
-  // getUser() を呼ぶことでトークンが更新される
-  await supabase.auth.getUser();
+  await supabase.auth.getClaims();
 
   return response;
 }

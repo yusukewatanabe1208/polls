@@ -21,14 +21,18 @@ export default async function PlayQuestionPage({
   params: Promise<{ id: string }>;
   searchParams: Promise<{ removed?: string }>;
 }) {
-  const session = await repo.getSession();
+  const { id } = await params;
+  const { removed } = await searchParams;
+
+  // 質問の取得はログイン状態に依存しないので、セッションと同時に投げる
+  const [session, question] = await Promise.all([
+    repo.getSession(),
+    repo.getQuestion(id),
+  ]);
+
   // 未ログインは、まずログインなしのお試し（5問）へ
   if (!session) redirect("/try");
   if (!session.profile) redirect("/onboarding");
-
-  const { id } = await params;
-  const { removed } = await searchParams;
-  const question = await repo.getQuestion(id);
   if (!question || question.status === "deleted") notFound();
 
   const me = session.profile;

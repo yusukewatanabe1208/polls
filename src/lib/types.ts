@@ -9,15 +9,6 @@ export type QuestionStatus = "active" | "hidden" | "deleted";
  */
 export type DemoFlag = { is_demo?: boolean };
 
-/** Supabase Auth の user に相当（ローカルではモック） */
-export type AuthUser = DemoFlag & {
-  id: string;
-  email: string;
-  display_name: string;
-  provider: "google";
-  created_at: string;
-};
-
 export type Profile = DemoFlag & {
   id: string; // auth user id と一致
   /** 一度決めたら変更できない（DBのトリガーでも禁止している） */
@@ -145,25 +136,6 @@ export type Favorite = {
   question_id: string;
   user_id: string;
   created_at: string;
-};
-
-/** シードデータの構造が変わったらこの値を上げる（不一致なら初期データを作り直す） */
-export const DB_SCHEMA_VERSION = 11;
-
-export type Database = {
-  schema_version: number;
-  auth_users: AuthUser[];
-  profiles: Profile[];
-  specialties: Specialty[];
-  categories: Category[];
-  questions: Question[];
-  votes: Vote[];
-  comments: Comment[];
-  favorites: Favorite[];
-  comment_likes: CommentLike[];
-  removal_requests: RemovalRequest[];
-  reports: Report[];
-  settings: AppSettings;
 };
 
 /** question_stats View 相当（本人除外は行わない全体集計） */

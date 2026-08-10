@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { submitTrialAnswer } from "@/app/actions";
 import type { Choice } from "@/lib/types";
+import { SubmitButton } from "./SubmitButton";
 
 /**
  * ログインなしのお試し用の回答フォーム。
@@ -42,9 +43,15 @@ export function TrialVoteForm({
         </button>
       ))}
 
-      <button type="submit" className="btn btn-primary w-full" disabled={!choice}>
-        {choice ? `${choice}で回答する` : "AかBを選んでください"}
-      </button>
+      {choice ? (
+        <SubmitButton pendingLabel="送信中…" className="btn btn-primary w-full">
+          {`${choice}で回答する`}
+        </SubmitButton>
+      ) : (
+        <button type="submit" className="btn btn-primary w-full" disabled>
+          AかBを選んでください
+        </button>
+      )}
     </form>
   );
 }

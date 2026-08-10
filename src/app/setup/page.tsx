@@ -5,7 +5,6 @@ import { SqlCopyBlock } from "@/components/SqlCopyBlock";
 import {
   SUPABASE_KEY,
   SUPABASE_URL,
-  getBackend,
   isSupabaseConfigured,
 } from "@/lib/config";
 
@@ -19,16 +18,6 @@ type Check = {
 
 async function runChecks(): Promise<Check[]> {
   const checks: Check[] = [];
-  const backend = getBackend();
-
-  checks.push({
-    label: "データバックエンド",
-    ok: true,
-    detail:
-      backend === "supabase"
-        ? "supabase（Supabase Auth + PostgreSQL）"
-        : "local（.data/db.json + モック認証）",
-  });
 
   checks.push({
     label: "環境変数",

@@ -1,7 +1,6 @@
 {
   "_readme": [
-    "デモデータの唯一の定義元。ローカルJSON版（src/lib/seed.ts）と",
-    "Supabase版（scripts/seed-supabase.mjs）の両方がこのファイルを読む。",
+    "デモデータの唯一の定義元。scripts/seed-supabase.mjs がこのファイルを読む。",
     "構成: 全体の約8割を「循環器」の質問にし、残り2割は他分野の基本的な内容にする。",
     "questions[].level は resident / non_specialist / specialist のいずれか（0005_question_level.sql）。",
     "questions[].category は src/lib/master.ts の CATEGORIES 名と一致させる。",

@@ -9,7 +9,6 @@ import {
   purgeAllDemoDataAction,
   purgeDemoVotesAction,
 } from "@/app/actions";
-import { getBackend } from "@/lib/config";
 import { specialtyName } from "@/lib/master";
 import { repo } from "@/lib/repo";
 
@@ -27,7 +26,6 @@ export default async function AdminPage() {
     repo.getMinOtherVotes(),
     repo.getDemoCounts(),
   ]);
-  const backend = getBackend();
 
   return (
     <div className="space-y-6">
@@ -98,11 +96,8 @@ export default async function AdminPage() {
               ダミーデータをすべて削除
             </p>
             <p className="mt-1 text-xs text-red-700">
-              ダミーの質問・投票・コメントをすべて削除します。ダミー質問に付いた実ユーザーの回答
-              {backend === "local" ? `${demo.realVotesOnDemoQuestions}件` : ""}も質問ごと消えます。
-              {backend === "supabase"
-                ? "アカウント(auth.users)の削除には service_role が必要なため、supabase/purge_demo.sql をSQL Editorで実行してください。"
-                : "デモアカウントでログイン中の場合は自動的にログアウトします。"}
+              ダミーの質問・投票・コメントをすべて削除します。ダミー質問に付いた実ユーザーの回答も質問ごと消えます。
+              アカウント(auth.users)の削除には service_role が必要なため、supabase/purge_demo.sql をSQL Editorで実行してください。
             </p>
             <form action={purgeAllDemoDataAction} className="mt-2">
               <button className="btn btn-ghost !py-1 text-xs text-red-700" type="submit">

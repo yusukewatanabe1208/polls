@@ -11,9 +11,12 @@ next-env.d.ts
 .env.local
 .env*.local
 
-# ローカルモードのデータ・アップロード
+# 旧ローカルバックエンドの残置データ（Supabase一本化により未使用）
 .data
 
 # OS
 .DS_Store
 .vercel
+
+# ローカル検証用の使い捨てPostgreSQL（npm run test:db）
+.pgtest

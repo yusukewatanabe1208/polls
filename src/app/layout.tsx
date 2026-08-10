@@ -2,7 +2,6 @@ import type { Metadata, Viewport } from "next";
 import Link from "next/link";
 import "./globals.css";
 import { HeaderMenu } from "@/components/HeaderMenu";
-import { getBackend } from "@/lib/config";
 import { repo } from "@/lib/repo";
 import { logout } from "./actions";
 
@@ -26,7 +25,6 @@ export default async function RootLayout({
 }) {
   const session = await repo.getSession();
   const profile = session?.profile ?? null;
-  const backend = getBackend();
 
   return (
     <html lang="ja">
@@ -83,8 +81,6 @@ export default async function RootLayout({
             <Link href="/setup" className="underline">
               接続状態
             </Link>
-            <span className="mx-2">·</span>
-            {backend === "supabase" ? "Supabase接続モード" : "ローカルモード"}
           </p>
         </footer>
       </body>
