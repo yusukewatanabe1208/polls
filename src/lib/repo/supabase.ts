@@ -291,15 +291,20 @@ export async function getFeed(userId: string): Promise<FeedItem[]> {
     : items;
 }
 
+/**
+ * 次の未回答質問。
+ * フィード全体を取らずにRPCで1回の問い合わせに収める（往復を減らすため）。
+ */
 export async function getNextUnansweredQuestionId(
-  userId: string,
+  _userId: string,
   excludeId?: string,
 ) {
-  const feed = await getFeed(userId);
-  return (
-    feed.find((f) => !f.answered && f.question.id !== excludeId)?.question.id ??
-    null
-  );
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase.rpc("get_next_question", {
+    p_exclude: excludeId ?? null,
+  });
+  if (error) return null;
+  return (data as string | null) ?? null;
 }
 
 export async function getQuestion(

@@ -36,6 +36,7 @@ export default async function PlayQuestionPage({
     notFound();
   }
 
+  // まとめて並行に取得する（順番に待つと往復回数ぶん遅くなる）
   const [result, favorited, answeredCount, removalRequested] = await Promise.all([
     repo.getQuestionResult(question.id, me.id),
     repo.isFavorited(question.id, me.id),
