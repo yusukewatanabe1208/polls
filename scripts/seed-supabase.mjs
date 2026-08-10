@@ -281,8 +281,8 @@ on conflict (question_id, user_id) do nothing;`);
 }
 console.log("✓ 投票");
 
-// 5) コメント（デモ分は入れ替える）
-await sql("delete from public.comments where is_demo;");
+// 5) コメント（IDは質問番号から決まるので、消さずに上書きする。
+//    消すと comment_likes がカスケードで消え、実ユーザーのいいねまで失われる）
 for (const part of chunk(comments, 60)) {
   await sql(`
 insert into public.comments (id, question_id, user_id, body, status, is_demo)
@@ -290,8 +290,17 @@ values
 ${part
   .map((c) => `('${c.id}','${c.q}','${c.u}','${esc(c.body)}','visible',true)`)
   .join(",\n")}
-on conflict (id) do nothing;`);
+on conflict (id) do update set
+  question_id = excluded.question_id,
+  user_id = excluded.user_id,
+  body = excluded.body,
+  status = excluded.status
+where public.comments.is_demo;`);
 }
+// 定義から外れた古いデモコメントだけを削除する
+await sql(`
+delete from public.comments
+where is_demo and id not in (${comments.map((c) => `'${c.id}'`).join(",")});`);
 console.log("✓ コメント");
 
 // 6) コメントへのいいね（コメントを入れ替えたので、いいねも作り直す）

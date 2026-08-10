@@ -1,39 +1,66 @@
 import Link from "next/link";
-import { deleteComment, toggleCommentLike } from "@/app/actions";
+import { deleteComment } from "@/app/actions";
 import { specialtyName } from "@/lib/master";
 import type { CommentView } from "@/lib/repo/shapes";
 import { CommentForm } from "./CommentForm";
+import { CommentLikeButton } from "./CommentLikeButton";
 
-/** いいねボタン（サーバーアクション直結なのでJavaScriptが無くても動く） */
-function LikeButton({
+/**
+ * コメント欄。
+ * スマホで使えるよう、X（旧Twitter）のように縦に積む構成にしている。
+ *   @ユーザー名（診療科・回答）
+ *   本文
+ *   ♡いいね ／ 返信      ← 小さなアクション行
+ *   （返信フォームは横に並べず、下に全幅で開く）
+ *   └ 返信（左の線で1段下げる。返信の返信は作らない）
+ */
+
+function AuthorLine({
   comment,
   questionId,
+  currentUserId,
+  isAdmin,
 }: {
   comment: CommentView;
   questionId: string;
+  currentUserId: string;
+  isAdmin: boolean;
 }) {
   return (
-    <form action={toggleCommentLike}>
-      <input type="hidden" name="comment_id" value={comment.id} />
-      <input type="hidden" name="question_id" value={questionId} />
-      <button
-        type="submit"
-        aria-pressed={comment.likedByMe}
-        aria-label={comment.likedByMe ? "いいねを取り消す" : "いいね"}
-        className={`flex items-center gap-1 rounded-full border px-3 py-1 text-xs font-semibold transition ${
-          comment.likedByMe
-            ? "border-rose-300 bg-rose-50 text-rose-600"
-            : "border-line bg-white text-muted"
-        }`}
-      >
-        <span aria-hidden>{comment.likedByMe ? "♥" : "♡"}</span>
-        <span className="tabular-nums">{comment.likeCount}</span>
-      </button>
-    </form>
+    <div className="flex items-start justify-between gap-2">
+      <div className="min-w-0 text-xs">
+        <Link
+          href={`/profile/${comment.authorUsername}`}
+          className="font-semibold hover:underline"
+        >
+          @{comment.authorUsername}
+        </Link>
+        <span className="ml-2 text-muted">
+          {specialtyName(comment.authorSpecialtyId)}
+        </span>
+        {comment.authorChoice && (
+          <span className="ml-2 rounded-full bg-brand-soft px-2 py-0.5 text-brand">
+            {comment.authorChoice === "A" ? "はい" : "いいえ"}
+          </span>
+        )}
+      </div>
+      {(comment.user_id === currentUserId || isAdmin) && (
+        <form action={deleteComment} className="shrink-0">
+          <input type="hidden" name="comment_id" value={comment.id} />
+          <input type="hidden" name="question_id" value={questionId} />
+          <button
+            type="submit"
+            className="min-h-9 px-1 text-xs text-muted hover:text-red-600"
+          >
+            削除
+          </button>
+        </form>
+      )}
+    </div>
   );
 }
 
-function CommentBody({
+function Comment({
   comment,
   questionId,
   currentUserId,
@@ -51,94 +78,71 @@ function CommentBody({
   const replyToggleId = `reply-${comment.id}`;
 
   return (
-    <li className="rounded-xl border border-line p-3">
-      <div className="flex items-center justify-between gap-2 text-xs">
-        <span className="flex flex-wrap items-center gap-2">
-          <Link
-            href={`/profile/${comment.authorUsername}`}
-            className="font-semibold hover:underline"
-          >
-            @{comment.authorUsername}
-          </Link>
-          <span className="text-muted">
-            {specialtyName(comment.authorSpecialtyId)}
-          </span>
-          {comment.authorChoice && (
-            <span className="rounded-full bg-brand-soft px-2 py-0.5 text-brand">
-              {comment.authorChoice === "A" ? "はい" : "いいえ"}
-            </span>
-          )}
-        </span>
-        {(comment.user_id === currentUserId || isAdmin) && (
-          <form action={deleteComment}>
-            <input type="hidden" name="comment_id" value={comment.id} />
-            <input type="hidden" name="question_id" value={questionId} />
-            <button type="submit" className="text-muted hover:text-red-600">
-              削除
-            </button>
-          </form>
-        )}
-      </div>
+    <li className="border-t border-line pt-3 first:border-t-0 first:pt-0">
+      <AuthorLine
+        comment={comment}
+        questionId={questionId}
+        currentUserId={currentUserId}
+        isAdmin={isAdmin}
+      />
 
-      <p className="mt-2 whitespace-pre-wrap text-sm leading-6">{comment.body}</p>
+      <p className="mt-1.5 whitespace-pre-wrap text-sm leading-6">
+        {comment.body}
+      </p>
 
-      <div className="mt-2 flex items-center gap-2">
-        <LikeButton comment={comment} questionId={questionId} />
+      {/* 返信欄の開閉はCSSで行うためJavaScript不要。peerは対象より前に置く */}
+      {canPost && (
+        <input type="checkbox" id={replyToggleId} className="peer sr-only" />
+      )}
+
+      <div className="mt-0.5 flex items-center gap-4">
+        <CommentLikeButton
+          commentId={comment.id}
+          questionId={questionId}
+          likeCount={comment.likeCount}
+          likedByMe={comment.likedByMe}
+        />
         {canPost && (
-          <>
-            {/* 返信欄はCSSで開閉するのでJavaScript不要 */}
-            <input type="checkbox" id={replyToggleId} className="peer sr-only" />
-            <label
-              htmlFor={replyToggleId}
-              className="cursor-pointer rounded-full border border-line px-3 py-1 text-xs font-semibold text-muted"
-            >
-              返信
-            </label>
-            <div className="hidden w-full peer-checked:block">
-              <CommentForm
-                questionId={questionId}
-                parentId={comment.id}
-                placeholder={`@${comment.authorUsername} への返信`}
-              />
-            </div>
-          </>
+          <label
+            htmlFor={replyToggleId}
+            className="-mx-2 flex min-h-9 cursor-pointer items-center rounded-full px-2 text-sm text-muted hover:text-brand"
+          >
+            返信
+          </label>
         )}
       </div>
+
+      {/* 返信フォームは横に並べず、コメントの下に全幅で開く */}
+      {canPost && (
+        <div className="mt-2 hidden peer-checked:block">
+          <CommentForm
+            questionId={questionId}
+            parentId={comment.id}
+            placeholder={`@${comment.authorUsername} への返信`}
+          />
+        </div>
+      )}
 
       {replies.length > 0 && (
-        <ul className="mt-3 space-y-2 border-l-2 border-line pl-3">
+        <ul className="mt-3 space-y-3 border-l-2 border-line pl-3">
           {replies.map((r) => (
             <li key={r.id}>
-              <div className="flex items-center justify-between gap-2 text-xs">
-                <span className="flex flex-wrap items-center gap-2">
-                  <Link
-                    href={`/profile/${r.authorUsername}`}
-                    className="font-semibold hover:underline"
-                  >
-                    @{r.authorUsername}
-                  </Link>
-                  <span className="text-muted">
-                    {specialtyName(r.authorSpecialtyId)}
-                  </span>
-                </span>
-                {(r.user_id === currentUserId || isAdmin) && (
-                  <form action={deleteComment}>
-                    <input type="hidden" name="comment_id" value={r.id} />
-                    <input type="hidden" name="question_id" value={questionId} />
-                    <button
-                      type="submit"
-                      className="text-muted hover:text-red-600"
-                    >
-                      削除
-                    </button>
-                  </form>
-                )}
-              </div>
-              <p className="mt-1 whitespace-pre-wrap text-sm leading-6">
+              <AuthorLine
+                comment={r}
+                questionId={questionId}
+                currentUserId={currentUserId}
+                isAdmin={isAdmin}
+              />
+              <p className="mt-1.5 whitespace-pre-wrap text-sm leading-6">
                 {r.body}
               </p>
-              <div className="mt-1">
-                <LikeButton comment={r} questionId={questionId} />
+              <div className="mt-0.5">
+                <CommentLikeButton
+                  commentId={r.id}
+                  questionId={questionId}
+                  likeCount={r.likeCount}
+                  likedByMe={r.likedByMe}
+                />
               </div>
             </li>
           ))}
@@ -161,21 +165,15 @@ export function CommentSection({
   isAdmin: boolean;
   canPost: boolean;
 }) {
-  // 親コメントはいいねの多い順、返信は投稿順
-  const roots = comments
-    .filter((c) => !c.parentId)
-    .sort(
-      (a, b) =>
-        b.likeCount - a.likeCount ||
-        Date.parse(a.created_at) - Date.parse(b.created_at),
-    );
+  // 投稿順に並べる（いいね数で並べ替えると、押した瞬間に位置が動いて分かりにくい）
+  const byTime = (a: CommentView, b: CommentView) =>
+    Date.parse(a.created_at) - Date.parse(b.created_at);
+  const roots = comments.filter((c) => !c.parentId).sort(byTime);
   const repliesOf = (id: string) =>
-    comments
-      .filter((c) => c.parentId === id)
-      .sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at));
+    comments.filter((c) => c.parentId === id).sort(byTime);
 
   return (
-    <section className="card p-6">
+    <section className="card p-5">
       <h2 className="font-semibold">
         コメント
         <span className="ml-2 text-sm font-normal text-muted">
@@ -186,12 +184,18 @@ export function CommentSection({
         コメントは回答を確定した人だけが読み書きできます。
       </p>
 
-      <ul className="mt-4 space-y-3">
+      {canPost && (
+        <div className="mt-4">
+          <CommentForm questionId={questionId} />
+        </div>
+      )}
+
+      <ul className="mt-5 space-y-3">
         {roots.length === 0 && (
           <li className="text-sm text-muted">まだコメントはありません。</li>
         )}
         {roots.map((c) => (
-          <CommentBody
+          <Comment
             key={c.id}
             comment={c}
             questionId={questionId}
@@ -202,12 +206,6 @@ export function CommentSection({
           />
         ))}
       </ul>
-
-      {canPost && (
-        <div className="mt-5 border-t border-line pt-4">
-          <CommentForm questionId={questionId} />
-        </div>
-      )}
     </section>
   );
 }
