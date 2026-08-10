@@ -28,6 +28,8 @@ import type {
   QuestionResult,
   QuestionWithAuthor,
   SessionInfo,
+  TrialQuestion,
+  TrialResult,
   UserMetrics,
 } from "./shapes";
 
@@ -162,6 +164,45 @@ export async function getQuestion(
     ...question,
     authorUsername: author?.username ?? "unknown",
     authorSpecialtyId: author?.specialty_id ?? 0,
+  };
+}
+
+/**
+ * ログインなしのお試しで出す質問。
+ * 研修医レベルの基本問題から、回答が集まっているものを常に同じ順で返す。
+ */
+export async function getTrialQuestions(limit: number): Promise<TrialQuestion[]> {
+  const db = getDb();
+  return q
+    .getVisibleQuestions()
+    .filter(
+      (question) =>
+        question.level === "resident" &&
+        db.votes.filter((v) => v.question_id === question.id).length >= 20,
+    )
+    .sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id))
+    .slice(0, limit)
+    .map((question) => ({
+      id: question.id,
+      question_text: question.question_text,
+      option_a: question.option_a,
+      option_b: question.option_b,
+      category_id: question.category_id,
+      level: question.level,
+    }));
+}
+
+/** お試しの分布（本人の回答はサーバーに保存しないので全体集計だけ） */
+export async function getTrialResult(questionId: string): Promise<TrialResult | null> {
+  const question = q.getQuestionById(questionId);
+  if (!question || question.status !== "active") return null;
+  const stats = q.getQuestionStats(questionId);
+  return {
+    voteCount: stats.vote_count,
+    aCount: stats.a_count,
+    bCount: stats.b_count,
+    aRatio: stats.a_ratio,
+    bRatio: stats.b_ratio,
   };
 }
 

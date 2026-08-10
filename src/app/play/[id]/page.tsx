@@ -22,7 +22,8 @@ export default async function PlayQuestionPage({
   searchParams: Promise<{ removed?: string }>;
 }) {
   const session = await repo.getSession();
-  if (!session) redirect("/login");
+  // 未ログインは、まずログインなしのお試し（5問）へ
+  if (!session) redirect("/try");
   if (!session.profile) redirect("/onboarding");
 
   const { id } = await params;

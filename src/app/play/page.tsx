@@ -17,7 +17,8 @@ export default async function PlayEntryPage({
   searchParams: Promise<{ done?: string; go?: string }>;
 }) {
   const session = await repo.getSession();
-  if (!session) redirect("/login");
+  // 未ログインは、まずログインなしのお試し（5問）へ
+  if (!session) redirect("/try");
   if (!session.profile) redirect("/onboarding");
 
   const { go } = await searchParams;

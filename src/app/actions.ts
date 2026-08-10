@@ -24,6 +24,7 @@ import {
 } from "@/lib/master";
 import { repo } from "@/lib/repo";
 import { setSessionUser } from "@/lib/session";
+import { TRIAL_LIMIT, addTrialAnswer, clearTrialAnswers } from "@/lib/trial";
 import {
   REPORT_REASONS,
   type Choice,
@@ -54,6 +55,29 @@ async function requireAdmin(): Promise<Profile> {
 /* 認証                                                                */
 /* ------------------------------------------------------------------ */
 
+/* ------------------------------------------------------------------ */
+/* ログインなしのお試し（5問）                                            */
+/* ------------------------------------------------------------------ */
+
+/**
+ * お試しの回答。votes には保存せず Cookie に持つ。
+ * 5問に達したらログインを促す画面に送る。
+ */
+export async function submitTrialAnswer(formData: FormData) {
+  const questionId = String(formData.get("question_id") ?? "");
+  const choice = String(formData.get("choice") ?? "") as Choice;
+  if (choice !== "A" && choice !== "B") redirect("/try");
+
+  // 実在する（お試し対象の）質問か確認する
+  const trialQuestions = await repo.getTrialQuestions(TRIAL_LIMIT);
+  if (!trialQuestions.some((q) => q.id === questionId)) redirect("/try");
+
+  const answers = await addTrialAnswer(questionId, choice);
+  if (!answers.some((a) => a.id === questionId)) redirect("/try");
+
+  redirect(`/try?show=${questionId}`);
+}
+
 /** ローカルモック認証：既存のデモアカウントでログイン */
 export async function loginAsDemoUser(formData: FormData) {
   if (getBackend() !== "local") redirect("/login");
@@ -61,6 +85,7 @@ export async function loginAsDemoUser(formData: FormData) {
   const user = getDb().auth_users.find((u) => u.id === userId);
   if (!user) redirect("/login?error=notfound");
   await setSessionUser(user.id);
+  await clearTrialAnswers();
   const profile = getDb().profiles.find((p) => p.id === user.id);
   redirect(profile ? "/play" : "/onboarding");
 }
@@ -80,6 +105,7 @@ export async function loginAsNewAccount() {
     });
   });
   await setSessionUser(id);
+  await clearTrialAnswers();
   redirect("/onboarding");
 }
 

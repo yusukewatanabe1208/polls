@@ -5,6 +5,7 @@ import { getBackend } from "@/lib/config";
 import { getDb } from "@/lib/db";
 import { specialtyName } from "@/lib/master";
 import { repo } from "@/lib/repo";
+import { TRIAL_LIMIT } from "@/lib/trial";
 import { loginAsDemoUser, loginAsNewAccount } from "../actions";
 
 export default async function LoginPage({
@@ -20,12 +21,9 @@ export default async function LoginPage({
   const backend = getBackend();
 
   return (
-    <div className="mx-auto max-w-md space-y-6">
-      <div className="card p-6 text-center">
+    <div className="mx-auto max-w-md space-y-4">
+      <div className="card p-8 text-center">
         <h1 className="text-xl font-bold">ログイン</h1>
-        <p className="mt-2 text-sm text-muted">
-          医師向けの2択診療判断サービスです。
-        </p>
 
         {error && (
           <p className="mt-4 rounded-lg bg-red-50 p-3 text-left text-sm text-red-700">
@@ -34,46 +32,38 @@ export default async function LoginPage({
         )}
 
         {backend === "supabase" ? (
-          <>
+          <div className="mt-6">
             <GoogleLoginButton />
-            <p className="mt-3 text-xs text-muted">
-              Supabase Auth のGoogleログインを使用します。
-            </p>
-          </>
+          </div>
         ) : (
-          <>
-            <form action={loginAsNewAccount} className="mt-5">
-              <button type="submit" className="btn btn-primary w-full">
-                Googleで始める（モック / 新規登録）
-              </button>
-            </form>
-            <p className="mt-3 text-xs text-muted">
-              ローカルモードのためモック認証で動作します。
-            </p>
-          </>
+          <form action={loginAsNewAccount} className="mt-6">
+            <button type="submit" className="btn btn-primary w-full">
+              Googleで続ける（モック）
+            </button>
+          </form>
         )}
       </div>
 
-      {backend === "local" && <DemoAccounts />}
-
       <p className="text-center text-xs text-muted">
-        <Link href="/setup" className="underline">
-          接続状態を確認する
+        <Link href="/try" className="underline">
+          まず{TRIAL_LIMIT}問ためす（ログイン不要）
         </Link>
       </p>
+
+      {backend === "local" && <DemoAccounts />}
     </div>
   );
 }
 
+/** ローカル開発時だけ出すデモアカウント（既定では折りたたむ） */
 function DemoAccounts() {
   const demoAccounts = getDb().profiles.slice(0, 4);
   return (
-    <div className="card p-6">
-      <h2 className="text-sm font-semibold">デモアカウントでログイン</h2>
-      <p className="mt-1 text-xs text-muted">
-        回答済みデータが入っているため、普通度の表示をすぐ確認できます。
-      </p>
-      <ul className="mt-4 space-y-2">
+    <details className="card p-4">
+      <summary className="cursor-pointer text-sm font-semibold">
+        デモアカウントでログイン（ローカル）
+      </summary>
+      <ul className="mt-3 space-y-2">
         {demoAccounts.map((p) => (
           <li key={p.id}>
             <form action={loginAsDemoUser}>
@@ -98,6 +88,11 @@ function DemoAccounts() {
           </li>
         ))}
       </ul>
-    </div>
+      <p className="mt-3 text-center text-xs text-muted">
+        <Link href="/setup" className="underline">
+          接続状態を確認する
+        </Link>
+      </p>
+    </details>
   );
 }

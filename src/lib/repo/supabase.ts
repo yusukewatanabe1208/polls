@@ -24,6 +24,8 @@ import type {
   QuestionResult,
   QuestionWithAuthor,
   SessionInfo,
+  TrialQuestion,
+  TrialResult,
   UserMetrics,
 } from "./shapes";
 
@@ -322,6 +324,35 @@ export async function getQuestion(
     ...question,
     authorUsername: (author?.username as string) ?? "unknown",
     authorSpecialtyId: (author?.specialty_id as number) ?? 0,
+  };
+}
+
+/**
+ * ログインなしのお試しで出す質問。
+ * anon でも呼べる RPC（0011_trial_without_login.sql）を使う。
+ */
+export async function getTrialQuestions(limit: number): Promise<TrialQuestion[]> {
+  const supabase = await createSupabaseServerClient();
+  const { data } = await supabase.rpc("get_trial_questions", { p_limit: limit });
+  return (data ?? []) as TrialQuestion[];
+}
+
+/** お試しの分布（本人の回答はサーバーに保存しないので全体集計だけ） */
+export async function getTrialResult(questionId: string): Promise<TrialResult | null> {
+  const supabase = await createSupabaseServerClient();
+  const { data } = await supabase
+    .rpc("get_trial_result", { p_question_id: questionId })
+    .maybeSingle();
+  if (!data) return null;
+  const row = data as { vote_count: number; a_count: number; b_count: number };
+  const total = row.vote_count;
+  if (total === 0) return null;
+  return {
+    voteCount: total,
+    aCount: row.a_count,
+    bCount: row.b_count,
+    aRatio: (row.a_count / total) * 100,
+    bRatio: (row.b_count / total) * 100,
   };
 }
 

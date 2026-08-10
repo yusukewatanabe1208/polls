@@ -44,6 +44,25 @@ export type QuestionResult = {
   eligible: boolean;
 };
 
+/** ログインなしのお試しで出す質問（作者情報は出さない） */
+export type TrialQuestion = {
+  id: string;
+  question_text: string;
+  option_a: string;
+  option_b: string;
+  category_id: number;
+  level: string;
+};
+
+/** お試しの分布（本人の回答はサーバーに無いので全体集計のみ） */
+export type TrialResult = {
+  voteCount: number;
+  aCount: number;
+  bCount: number;
+  aRatio: number;
+  bRatio: number;
+};
+
 export type CommentView = {
   id: string;
   question_id: string;

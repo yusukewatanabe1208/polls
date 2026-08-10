@@ -31,6 +31,8 @@ export const repo: Repo = {
   getFeed: cache(impl.getFeed),
   getNextUnansweredQuestionId: cache(impl.getNextUnansweredQuestionId),
   getQuestion: cache(impl.getQuestion),
+  getTrialQuestions: cache(impl.getTrialQuestions),
+  getTrialResult: cache(impl.getTrialResult),
   getQuestionResult: cache(impl.getQuestionResult),
   getComments: cache(impl.getComments),
   getUserMetrics: cache(impl.getUserMetrics),

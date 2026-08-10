@@ -1,6 +1,7 @@
 import { revalidatePath } from "next/cache";
 import { NextResponse, type NextRequest } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { clearTrialAnswers } from "@/lib/trial";
 
 /**
  * Google OAuth のリダイレクト先。
@@ -38,6 +39,9 @@ export async function GET(request: NextRequest) {
     .select("id")
     .eq("id", user.id)
     .maybeSingle();
+
+  // ログインしたらお試し（Cookie）の状態は不要
+  await clearTrialAnswers();
 
   // ログインのたびに指標を計算し直すため、キャッシュを破棄する
   revalidatePath("/", "layout");
