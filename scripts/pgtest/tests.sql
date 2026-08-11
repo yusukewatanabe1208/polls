@@ -557,6 +557,57 @@ reset role;
 update public.questions set status = 'active'
 where id = '00000000-0000-0000-0000-0000000f0002'::uuid;
 
+-- ---------------------------------------------------------------------
+-- お試しのコメント（0028）
+--   公開するのは「お試しで出している質問」だけに限られているか
+-- ---------------------------------------------------------------------
+reset role;
+-- f0001 をお試しの条件（研修医レベル・回答20件以上）に合わせる
+update public.questions set level = 'resident'
+where id = '00000000-0000-0000-0000-0000000f0001'::uuid;
+
+set role anon;
+select t_ok('未ログインでもお試し質問のコメントを読める',
+  (select count(*) > 0 from public.get_trial_comments(
+    '00000000-0000-0000-0000-0000000f0001'::uuid, 20)),
+  (select count(*)::text from public.get_trial_comments(
+    '00000000-0000-0000-0000-0000000f0001'::uuid, 20)));
+
+select t_ok('投稿者名と選択が付く',
+  (select author_username <> 'unknown' and author_choice is not null
+   from public.get_trial_comments('00000000-0000-0000-0000-0000000f0001'::uuid, 20)
+   limit 1));
+
+select t_ok('戻り値に user_id を含めない',
+  (select count(*) = 0 from information_schema.columns
+   where table_schema = 'public'
+     and table_name = 'get_trial_comments'
+     and column_name = 'user_id'));
+reset role;
+
+-- お試しの条件から外れた質問のコメントは出さない
+update public.questions set level = 'specialist'
+where id = '00000000-0000-0000-0000-0000000f0001'::uuid;
+set role anon;
+select t_ok('お試し対象外の質問のコメントは読めない',
+  (select count(*) = 0 from public.get_trial_comments(
+    '00000000-0000-0000-0000-0000000f0001'::uuid, 20)));
+reset role;
+update public.questions set level = 'resident'
+where id = '00000000-0000-0000-0000-0000000f0001'::uuid;
+
+-- 非公開の質問も出さない
+update public.questions set status = 'hidden'
+where id = '00000000-0000-0000-0000-0000000f0001'::uuid;
+set role anon;
+select t_ok('非公開の質問のコメントは読めない',
+  (select count(*) = 0 from public.get_trial_comments(
+    '00000000-0000-0000-0000-0000000f0001'::uuid, 20)));
+reset role;
+update public.questions set status = 'active'
+where id = '00000000-0000-0000-0000-0000000f0001'::uuid;
+
+set role anon;
 -- お試しでは個票は出さない（誰が何を選んだかは返らない）
 select t_ok('お試しの戻り値に user_id が含まれない',
   (select count(*) = 0 from information_schema.columns

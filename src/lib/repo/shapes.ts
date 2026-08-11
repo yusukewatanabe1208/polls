@@ -78,6 +78,18 @@ export type CommentView = {
   likedByMe: boolean;
 };
 
+/** お試し（未ログイン）で見せるコメント。読むだけなので投稿者IDは持たない */
+export type TrialComment = {
+  id: string;
+  parentId: string | null;
+  body: string;
+  created_at: string;
+  authorUsername: string;
+  authorSpecialtyId: number;
+  authorChoice: Choice | null;
+  likeCount: number;
+};
+
 /** プロフィールに出す自分のコメント */
 export type MyCommentView = {
   id: string;

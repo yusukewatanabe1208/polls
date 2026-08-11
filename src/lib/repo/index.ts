@@ -27,6 +27,7 @@ export const repo: Repo = {
   getTrialQuestions: cache(impl.getTrialQuestions),
   getTrialResult: cache(impl.getTrialResult),
   getTrialResults: cache(impl.getTrialResults),
+  getTrialComments: cache(impl.getTrialComments),
   getQuestionResult: cache(impl.getQuestionResult),
   getComments: cache(impl.getComments),
   getUserMetrics: cache(impl.getUserMetrics),

@@ -26,6 +26,7 @@ import type {
   QuestionWithAuthor,
   SessionInfo,
   TrialQuestion,
+  TrialComment,
   TrialResult,
   UserMetrics,
   UserReportView,
@@ -340,6 +341,32 @@ export async function getTrialResult(questionId: string): Promise<TrialResult | 
     aRatio: (row.a_count / total) * 100,
     bRatio: (row.b_count / total) * 100,
   };
+}
+
+/**
+ * お試しで見せるコメント（0028）。
+ * 未ログインでも読めるが、DB側でお試し対象の質問だけに絞られている。
+ */
+export async function getTrialComments(
+  questionId: string,
+): Promise<TrialComment[]> {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase.rpc("get_trial_comments", {
+    p_question_id: questionId,
+    p_limit: 20,
+  });
+  if (error || !data) return [];
+
+  return (data as Record<string, unknown>[]).map((c) => ({
+    id: c.id as string,
+    parentId: (c.parent_id as string | null) ?? null,
+    body: c.body as string,
+    created_at: c.created_at as string,
+    authorUsername: (c.author_username as string) ?? "unknown",
+    authorSpecialtyId: Number(c.author_specialty_id ?? 0),
+    authorChoice: (c.author_choice as Choice | null) ?? null,
+    likeCount: Number(c.like_count ?? 0),
+  }));
 }
 
 function toTrialResult(voteCount: number, aCount: number, bCount: number) {

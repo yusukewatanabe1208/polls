@@ -1,9 +1,14 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { TrialVoteForm } from "@/components/TrialVoteForm";
-import { categoryName } from "@/lib/master";
+import { categoryName, specialtyName } from "@/lib/master";
 import { displayScore } from "@/lib/metrics";
-import { repo, type TrialQuestion, type TrialResult } from "@/lib/repo";
+import {
+  repo,
+  type TrialComment,
+  type TrialQuestion,
+  type TrialResult,
+} from "@/lib/repo";
 import { TRIAL_LIMIT, getTrialAnswers, type TrialAnswer } from "@/lib/trial";
 import type { Choice } from "@/lib/types";
 
@@ -43,7 +48,10 @@ export default async function TryPage({
   const shown = show ? questions.find((q) => q.id === show) : undefined;
   const shownAnswer = shown ? answers.find((a) => a.id === shown.id) : undefined;
   if (shown && shownAnswer) {
-    const result = await repo.getTrialResult(shown.id);
+    const [result, comments] = await Promise.all([
+      repo.getTrialResult(shown.id),
+      repo.getTrialComments(shown.id),
+    ]);
     const done = answers.length >= total;
     return (
       <div className="space-y-4">
@@ -60,6 +68,8 @@ export default async function TryPage({
             <p className="mt-4 text-sm text-muted">分布を取得できませんでした。</p>
           )}
         </article>
+
+        <TrialComments comments={comments} />
 
         <Link href="/try" className="btn btn-primary w-full">
           {done ? "成績を見る →" : "次の質問へ →"}
@@ -383,6 +393,80 @@ function Distribution({
         回答数 {result.voteCount.toLocaleString("ja-JP")}
       </p>
     </div>
+  );
+}
+
+/**
+ * お試しで見せるコメント（読むだけ）。
+ * 投稿・いいね・返信はサインインしてから。
+ */
+function TrialComments({ comments }: { comments: TrialComment[] }) {
+  const roots = comments.filter((c) => c.parentId === null);
+  const repliesOf = (id: string) =>
+    comments.filter((c) => c.parentId === id);
+
+  return (
+    <section className="card p-5">
+      <div className="flex items-baseline justify-between">
+        <h2 className="font-bold">他の医師のコメント</h2>
+        {comments.length > 0 && (
+          <span className="text-xs text-muted tabular-nums">
+            {comments.length}件
+          </span>
+        )}
+      </div>
+
+      {roots.length === 0 ? (
+        <p className="mt-3 text-sm text-muted">
+          この質問にはまだコメントがありません。
+        </p>
+      ) : (
+        <ul className="mt-3 space-y-3">
+          {roots.map((c) => (
+            <li key={c.id} className="border-t border-line pt-3 first:border-t-0 first:pt-0">
+              <TrialCommentBody comment={c} />
+              {repliesOf(c.id).length > 0 && (
+                <ul className="mt-3 space-y-3 border-l-2 border-line pl-3">
+                  {repliesOf(c.id).map((r) => (
+                    <li key={r.id}>
+                      <TrialCommentBody comment={r} />
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <p className="mt-4 border-t border-line pt-3 text-xs text-muted">
+        サインインすると、コメントの投稿・返信・いいねができます。
+      </p>
+    </section>
+  );
+}
+
+function TrialCommentBody({ comment }: { comment: TrialComment }) {
+  return (
+    <>
+      <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
+        <span className="font-semibold text-slate-700">
+          @{comment.authorUsername}
+        </span>
+        <span>{specialtyName(comment.authorSpecialtyId)}</span>
+        {comment.authorChoice && (
+          <span className="rounded-full bg-brand-soft px-2 py-0.5 font-semibold text-brand">
+            {comment.authorChoice}を選択
+          </span>
+        )}
+        {comment.likeCount > 0 && (
+          <span className="tabular-nums text-rose-600">♥ {comment.likeCount}</span>
+        )}
+      </div>
+      <p className="mt-1.5 whitespace-pre-wrap text-sm leading-6">
+        {comment.body}
+      </p>
+    </>
   );
 }
 
