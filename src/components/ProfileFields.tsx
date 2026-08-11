@@ -1,5 +1,7 @@
 "use client";
 
+import { LICENSE_NUMBER_MAX, REAL_NAME_MAX } from "@/lib/limits";
+
 import { useState } from "react";
 import { OCCUPATIONS, PREFECTURES, SPECIALTIES } from "@/lib/master";
 import { PillSelect } from "./PillSelect";
@@ -129,7 +131,7 @@ export function ProfileFields({
               defaultValue={defaultRealName}
               placeholder="山田 太郎"
               autoComplete="name"
-              maxLength={50}
+              maxLength={REAL_NAME_MAX}
               required
             />
             <p className="mt-1 text-xs text-muted">
@@ -151,7 +153,7 @@ export function ProfileFields({
           defaultValue={defaultLicenseNumber}
           placeholder="123456"
           inputMode="numeric"
-          maxLength={20}
+          maxLength={LICENSE_NUMBER_MAX}
         />
         <p className="mt-1 text-xs text-muted">
           任意です。入力する場合は半角数字で。非公開で、

@@ -19,6 +19,7 @@ import type {
   DistributionBand,
   MyCommentView,
   FavoriteItem,
+  FeedbackView,
   FeedItem,
   LikedCommentView,
   RankingView,
@@ -870,6 +871,41 @@ export async function getRanking(userId: string): Promise<RankingView> {
     rankDescription: band.description,
     comparedUsers: Number(row.compared_users ?? 0),
   };
+}
+
+/* ---------------------------- 運営への要望 -------------------------- */
+
+/** 要望を送る。誰からかはRLSが auth.uid() で決める */
+export async function insertFeedback(
+  userId: string,
+  body: string,
+): Promise<{ error?: string }> {
+  const supabase = await createSupabaseServerClient();
+  const { error } = await supabase
+    .from("feedback")
+    .insert({ user_id: userId, body });
+  return error ? { error: error.message } : {};
+}
+
+/** 管理画面用の一覧。管理者以外には行が返らない（0029） */
+export async function getFeedback(limit: number): Promise<FeedbackView[]> {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase.rpc("get_feedback", {
+    p_limit: limit,
+  });
+  if (error || !data) return [];
+  return (data as Record<string, unknown>[]).map((f) => ({
+    id: f.id as string,
+    body: f.body as string,
+    status: f.status as string,
+    created_at: f.created_at as string,
+    authorUsername: (f.author_username as string) ?? "unknown",
+  }));
+}
+
+export async function setFeedbackStatus(id: string, status: string) {
+  const supabase = await createSupabaseServerClient();
+  await supabase.from("feedback").update({ status }).eq("id", id);
 }
 
 /* ---------------------------- お気に入り ---------------------------- */

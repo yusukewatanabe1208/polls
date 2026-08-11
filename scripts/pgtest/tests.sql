@@ -38,6 +38,20 @@ exception
 end;
 $$;
 
+/** 権限・制約を問わず「拒否されれば合格」。CHECK違反(23514)も含む */
+create or replace function t_rejected(p_name text, p_sql text)
+returns void language plpgsql as $$
+begin
+  execute p_sql;
+  perform t_ok(p_name, false, '拒否されずに実行された');
+exception
+  when insufficient_privilege or check_violation then
+    perform t_ok(p_name, true, sqlerrm);
+  when others then
+    perform t_ok(p_name, false, format('想定外のエラー %s: %s', sqlstate, sqlerrm));
+end;
+$$;
+
 -- =====================================================================
 -- 準備（superuser として投入する）
 -- =====================================================================
@@ -614,6 +628,87 @@ select t_ok('お試しの戻り値に user_id が含まれない',
    where table_schema = 'public'
      and column_name = 'user_id'
      and table_name = 'get_trial_results'));
+
+-- =====================================================================
+-- 11. プロフィールの文字数制限（0029）
+--     画面を通さず直接 update しても効くか
+-- =====================================================================
+\echo '--- 11. 文字数制限 ---'
+set role authenticated;
+select public.set_auth(:user_id);
+
+-- 本名は登録後トリガーで変更禁止のため、制限が効くのは新規登録のとき。
+-- superuser として insert し、CHECK制約そのものを確かめる。
+reset role;
+insert into auth.users (id) values ('00000000-0000-0000-0000-0000000000e5');
+select t_rejected('本名は50文字を超えて登録できない',
+  'insert into public.profiles (id, username, specialty_id, work_prefecture, real_name)
+   values (''00000000-0000-0000-0000-0000000000e5'', ''too_long_name'', 1, ''東京都'', repeat(''あ'', 51))');
+
+set role authenticated;
+select public.set_auth(:user_id);
+
+select t_rejected('医籍登録番号は20桁を超えられない',
+  format('update public.profiles set license_number = repeat(''1'', 21) where id = %L', :user_id));
+
+select t_rejected('医籍登録番号に数字以外は入れられない',
+  format('update public.profiles set license_number = ''12ab'' where id = %L', :user_id));
+
+-- 範囲内なら通る
+update public.profiles set license_number = '1234567890' where id = :user_id;
+reset role;
+select t_ok('20桁以内の数字は通る',
+  (select license_number = '1234567890' from public.profiles where id = :user_id));
+
+set role authenticated;
+select public.set_auth(:user_id);
+update public.profiles set license_number = '' where id = :user_id;
+reset role;
+select t_ok('未入力（空）も通る',
+  (select license_number = '' from public.profiles where id = :user_id));
+
+-- =====================================================================
+-- 12. 運営への要望（0029）
+-- =====================================================================
+\echo '--- 12. 運営への要望 ---'
+set role authenticated;
+select public.set_auth(:user_id);
+
+insert into public.feedback (user_id, body) values (:user_id, 'テストの要望です');
+select t_ok('本人は要望を送れる',
+  (select count(*) = 1 from public.feedback where user_id = :user_id));
+
+select t_denied('他人になりすまして送れない',
+  format('insert into public.feedback (user_id, body) values (%L, ''なりすまし'')', :other_id));
+
+select t_rejected('空の要望は送れない',
+  format('insert into public.feedback (user_id, body) values (%L, '''')', :user_id));
+
+select t_rejected('1000文字を超える要望は送れない',
+  format('insert into public.feedback (user_id, body) values (%L, repeat(''あ'', 1001))', :user_id));
+
+-- 他人の要望は読めない
+select public.set_auth(:other_id);
+select t_ok('他人の要望は読めない',
+  (select count(*) = 0 from public.feedback));
+select t_ok('管理者でなければ一覧RPCも空',
+  (select count(*) = 0 from public.get_feedback(100)));
+
+-- 管理者は読める
+select public.set_auth(:admin_id);
+select t_ok('管理者は要望を読める',
+  (select count(*) = 1 from public.get_feedback(100)));
+select t_ok('一覧には投稿者のユーザーネームが付く',
+  (select author_username = 'normal_user' from public.get_feedback(100) limit 1));
+
+-- 一般ユーザーは対応済みにできない
+-- RLSでは「見えない行」は更新対象にならず0行更新になる（例外にはならない）。
+-- 実際に状態が変わっていないことで確かめる。
+select public.set_auth(:other_id);
+update public.feedback set status = 'resolved';
+reset role;
+select t_ok('一般ユーザーは他人の要望の状態を変えられない',
+  (select status = 'open' from public.feedback where user_id = :user_id));
 
 -- =====================================================================
 -- 結果

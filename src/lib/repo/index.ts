@@ -44,6 +44,7 @@ export const repo: Repo = {
   hasRequestedRemoval: cache(impl.hasRequestedRemoval),
   getMyComments: cache(impl.getMyComments),
   getReceivedLikeCount: cache(impl.getReceivedLikeCount),
+  getFeedback: cache(impl.getFeedback),
 };
 
 export * from "./shapes";

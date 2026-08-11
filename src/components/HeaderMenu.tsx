@@ -37,6 +37,7 @@ export function HeaderMenu({
           ? [{ href: `/profile/${username}`, label: "プロフィール" }]
           : []),
         { href: "/settings", label: "設定" },
+        { href: "/feedback", label: "運営への要望" },
         // 管理画面は管理者のみ
         ...(isAdmin ? [{ href: "/admin", label: "管理画面" }] : []),
       ]

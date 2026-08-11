@@ -1,6 +1,15 @@
 /** 入力の上限（クライアント／サーバー／DBの3か所で同じ値を使う） */
 
 export const QUESTION_TEXT_MAX = 300;
+
+/** プロフィール。いずれも非公開の項目 */
+export const REAL_NAME_MAX = 50;
+/** 医籍登録番号は半角数字のみ。自己申告で照合はしない */
+export const LICENSE_NUMBER_MAX = 20;
+
+/** 運営への要望 */
+export const FEEDBACK_TEXT_MAX = 1000;
+
 export const OPTION_TEXT_MAX = 30;
 export const COMMENT_TEXT_MAX = 500;
 

@@ -6,9 +6,12 @@ import {
   CHOICE_A_LABEL,
   CHOICE_B_LABEL,
   COMMENT_TEXT_MAX,
+  FEEDBACK_TEXT_MAX,
   IMAGE_MAX_BYTES,
+  LICENSE_NUMBER_MAX,
   IMAGE_MIME_TYPES,
   QUESTION_TEXT_MAX,
+  REAL_NAME_MAX,
   REPORT_INTERVAL,
 } from "@/lib/limits";
 import {
@@ -106,13 +109,18 @@ function validateProfileInput(formData: FormData, options: { requireUsername: bo
   if (realName.length === 0) {
     return { error: "本名を入力してください。" } as const;
   }
-  if (realName.length > 50) {
-    return { error: "本名は50文字以内で入力してください。" } as const;
+  if (realName.length > REAL_NAME_MAX) {
+    return {
+      error: `本名は${REAL_NAME_MAX}文字以内で入力してください。`,
+    } as const;
   }
   // 医籍登録番号は任意。入力された場合のみ形式を確認する
-  if (licenseNumber !== "" && !/^[0-9]{1,20}$/.test(licenseNumber)) {
+  if (
+    licenseNumber !== "" &&
+    !new RegExp(`^[0-9]{1,${LICENSE_NUMBER_MAX}}$`).test(licenseNumber)
+  ) {
     return {
-      error: "医籍登録番号は半角数字で入力してください（未入力でも登録できます）。",
+      error: `医籍登録番号は半角数字${LICENSE_NUMBER_MAX}桁以内で入力してください（未入力でも登録できます）。`,
     } as const;
   }
   if (!isOccupation(occupation)) {
@@ -470,6 +478,37 @@ export async function deleteComment(formData: FormData) {
   });
 
   revalidatePath(`/play/${questionId}`);
+  revalidatePath("/admin");
+}
+
+/* ------------------------------------------------------------------ */
+/* 運営への要望                                                         */
+/* ------------------------------------------------------------------ */
+
+export async function submitFeedback(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const profile = await currentProfile();
+  if (!profile) return { error: "ログインが必要です。" };
+
+  const body = String(formData.get("body") ?? "").trim();
+  if (!body) return { error: "内容を入力してください。" };
+  if (body.length > FEEDBACK_TEXT_MAX) {
+    return { error: `${FEEDBACK_TEXT_MAX}文字以内で入力してください。` };
+  }
+
+  const result = await repo.insertFeedback(profile.id, body);
+  if (result.error) return { error: result.error };
+
+  revalidatePath("/feedback");
+  return { success: "送信しました。ご意見ありがとうございます。" };
+}
+
+/** 管理者が対応済みにする */
+export async function adminResolveFeedback(formData: FormData) {
+  await requireAdmin();
+  await repo.setFeedbackStatus(String(formData.get("feedback_id") ?? ""), "resolved");
   revalidatePath("/admin");
 }
 

@@ -115,6 +115,15 @@ export type AuthoredQuestion = Question & {
   viewerAnswered: boolean;
 };
 
+/** 運営への要望（管理画面で読む） */
+export type FeedbackView = {
+  id: string;
+  body: string;
+  status: string;
+  created_at: string;
+  authorUsername: string;
+};
+
 export type AdminQuestion = Question & {
   authorUsername: string;
   voteCount: number | null;

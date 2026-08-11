@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import {
+  adminResolveFeedback,
   adminResolveReport,
   adminSetCommentStatus,
   adminSetQuestionStatus,
@@ -18,13 +19,15 @@ export default async function AdminPage() {
   if (!session.profile) redirect("/onboarding");
   if (!session.profile.is_admin) redirect("/feed");
 
-  const [reports, questions, profiles, comments, min, demo] = await Promise.all([
+  const [reports, questions, profiles, comments, min, demo, feedback] =
+    await Promise.all([
     repo.adminGetReports(),
     repo.adminGetQuestions(),
     repo.adminGetProfiles(),
     repo.adminGetComments(),
     repo.getMinOtherVotes(),
     repo.getDemoCounts(),
+    repo.getFeedback(100),
   ]);
 
   return (
@@ -106,6 +109,55 @@ export default async function AdminPage() {
             </form>
           </div>
         </div>
+      </section>
+
+      <section className="card p-5">
+        <h2 className="font-semibold">
+          運営への要望（{feedback.filter((f) => f.status === "open").length}件 未対応
+          / 全{feedback.length}件）
+        </h2>
+        {feedback.length === 0 ? (
+          <p className="mt-2 text-sm text-muted">要望はまだありません。</p>
+        ) : (
+          <ul className="mt-3 space-y-3">
+            {feedback.map((f) => (
+              <li
+                key={f.id}
+                className={`rounded-xl border p-3 ${
+                  f.status === "open"
+                    ? "border-line bg-white"
+                    : "border-line bg-slate-50 opacity-70"
+                }`}
+              >
+                <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
+                  <span className="font-semibold text-slate-700">
+                    @{f.authorUsername}
+                  </span>
+                  <span>{new Date(f.created_at).toLocaleString("ja-JP")}</span>
+                  {f.status === "resolved" && (
+                    <span className="rounded-full bg-slate-200 px-2 py-0.5">
+                      対応済み
+                    </span>
+                  )}
+                </div>
+                <p className="mt-1.5 whitespace-pre-wrap text-sm leading-6">
+                  {f.body}
+                </p>
+                {f.status === "open" && (
+                  <form action={adminResolveFeedback} className="mt-2">
+                    <input type="hidden" name="feedback_id" value={f.id} />
+                    <button
+                      className="btn btn-ghost !py-1 text-xs"
+                      type="submit"
+                    >
+                      対応済みにする
+                    </button>
+                  </form>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
 
       <section className="card p-5">
