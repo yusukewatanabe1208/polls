@@ -35,6 +35,7 @@ export const repo: Repo = {
   getRecentAnswers: cache(impl.getRecentAnswers),
   getRanking: cache(impl.getRanking),
   getUserReport: cache(impl.getUserReport),
+  getOrdinarinessDistribution: cache(impl.getOrdinarinessDistribution),
   isFavorited: cache(impl.isFavorited),
   getFavorites: cache(impl.getFavorites),
   getLikedComments: cache(impl.getLikedComments),

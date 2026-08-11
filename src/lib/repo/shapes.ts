@@ -148,6 +148,12 @@ export type RecentAnswerView = {
 /** 成績表・プロフィールで使う指標一式（get_user_report の戻り値） */
 export type UserReportView = UserMetrics & RankingView;
 
+/** 偏差値10段階ごとの人数（ヒストグラム用） */
+export type DistributionBand = {
+  level: number;
+  userCount: number;
+};
+
 export type RankingView = {
   ordinariness: number | null;
   deviation: number | null;

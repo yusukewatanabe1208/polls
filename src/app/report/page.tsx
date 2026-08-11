@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { RANK_BANDS, displayScore } from "@/lib/metrics";
-import { repo } from "@/lib/repo";
+import { displayScore } from "@/lib/metrics";
+import { repo, type DistributionBand } from "@/lib/repo";
 
 export const dynamic = "force-dynamic";
 
@@ -29,11 +29,12 @@ export default async function ReportPage({
 
   // 指標は1回の問い合わせでまとめて取る（0022）。
   // 以前は普通度の集計を2回していた。
-  const [report, answers, minOtherVotes] = await Promise.all([
+  const [report, answers, minOtherVotes, distribution] = await Promise.all([
     repo.getUserReport(me.id),
     // 次があるか判定するため1件多く取る
     repo.getRecentAnswers(me.id, limit + 1),
     repo.getMinOtherVotes(),
+    repo.getOrdinarinessDistribution(),
   ]);
   const metrics = report;
   const ranking = report;
@@ -72,10 +73,6 @@ export default async function ReportPage({
             </p>
             <p className="mt-1 text-sm text-muted">{ranking.rankDescription}</p>
 
-            <div className="mt-5">
-              <RankScale level={level} />
-            </div>
-
             <div className="mt-6 border-t border-line pt-5">
               <p className="text-sm text-muted">普通度の偏差値</p>
               <p className="text-6xl font-bold leading-none tracking-tight">
@@ -99,6 +96,15 @@ export default async function ReportPage({
           </>
         )}
       </section>
+
+      {/* 普通度の分布と自分の位置 */}
+      {level && distribution.length > 0 && (
+        <DistributionChart
+          bands={distribution}
+          myLevel={level}
+          comparedUsers={ranking.comparedUsers}
+        />
+      )}
 
       {/* 回答履歴 */}
       <section className="space-y-3">
@@ -187,29 +193,124 @@ export default async function ReportPage({
 }
 
 /**
- * 10段階ランクの位置を示すスケール。
- * 左が独創的（レベル1）、右が普通（レベル10）。
+ * 普通度の分布と自分の位置。
+ *
+ * 10段階（偏差値5きざみ）ごとの人数を縦棒で出し、自分の段だけを強調する。
+ * 左が独創的（レベル1）、右が普通（レベル10）で、成績表のスケールと向きを揃える。
+ *
+ * 色は2色だけ。棒はすべて同じ意味（人数）なので同一色にし、
+ * 自分の段だけをブランド色にする。系列が複数あるわけではないので凡例は置かない。
+ * 灰色(#94a3b8)は背景とのコントラストが3:1に届かないため、
+ * その埋め合わせとして「あなた」の直接ラベルと表形式を併せて置いている。
  */
-function RankScale({ level }: { level: number }) {
-  const ascending = [...RANK_BANDS].sort((a, b) => a.level - b.level);
+function DistributionChart({
+  bands,
+  myLevel,
+  comparedUsers,
+}: {
+  bands: DistributionBand[];
+  myLevel: number;
+  comparedUsers: number;
+}) {
+  const ascending = [...bands].sort((a, b) => a.level - b.level);
+  const max = Math.max(...ascending.map((b) => b.userCount), 1);
+  const total = ascending.reduce((s, b) => s + b.userCount, 0);
+
   return (
-    <div>
-      <div className="flex gap-1">
-        {ascending.map((band) => (
-          <div
-            key={band.level}
-            className={`h-3 flex-1 rounded-full ${
-              band.level === level ? "bg-brand" : "bg-slate-200"
+    <section className="card p-5">
+      <h2 className="text-base font-bold">普通度の分布とあなたの位置</h2>
+      <p className="mt-1 text-xs text-muted">
+        医師{comparedUsers}人を偏差値5きざみの10段階に分けた人数です。
+      </p>
+
+      {/* 棒グラフ本体。高さは人数に比例させる。
+          ラベルの行は全列に確保する。自分の段にだけ足す作りにすると、
+          その段が最大値のとき棒とラベルの合計が枠を超えてはみ出す。 */}
+      <div className="mt-4 flex h-36 gap-[2px]" role="presentation">
+        {ascending.map((b) => {
+          const mine = b.level === myLevel;
+          // 0人の段も存在が分かるよう、床として2pxだけ残す
+          const heightPct = b.userCount === 0 ? 0 : (b.userCount / max) * 100;
+          return (
+            <div
+              key={b.level}
+              className="flex h-full flex-1 flex-col"
+              title={`レベル${b.level}：${b.userCount}人`}
+            >
+              {/* ラベル用の固定枠（全列共通なので棒の基準が揃う） */}
+              <div className="flex h-4 items-end justify-center">
+                {mine && (
+                  <span className="text-[0.65rem] font-bold leading-none text-brand">
+                    あなた
+                  </span>
+                )}
+              </div>
+              {/* 棒を描く領域 */}
+              <div className="flex flex-1 items-end">
+                <div
+                  className={`w-full rounded-t-[4px] ${
+                    mine ? "bg-brand" : "bg-slate-400"
+                  }`}
+                  style={{ height: `${heightPct}%`, minHeight: "2px" }}
+                />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* 目盛り。両端だけ言葉にして、間はレベル番号 */}
+      <div className="mt-1.5 flex gap-[2px]">
+        {ascending.map((b) => (
+          <span
+            key={b.level}
+            className={`flex-1 text-center text-[0.65rem] tabular-nums ${
+              b.level === myLevel ? "font-bold text-brand" : "text-muted"
             }`}
-            title={band.label}
-          />
+          >
+            {b.level}
+          </span>
         ))}
       </div>
-      <div className="mt-1.5 flex justify-between text-[0.7rem] text-muted">
-        <span>独創的</span>
-        <span>レベル {level} / 10</span>
-        <span>普通</span>
+      <div className="mt-1 flex justify-between text-xs text-muted">
+        <span>← 独創的</span>
+        <span>普通 →</span>
       </div>
-    </div>
+
+      {/* 色だけに頼らないための表。コントラストの補償も兼ねる */}
+      <details className="mt-4">
+        <summary className="cursor-pointer text-xs text-brand">
+          数値で見る
+        </summary>
+        <table className="mt-2 w-full text-xs">
+          <thead>
+            <tr className="text-muted">
+              <th className="py-1 text-left font-normal">レベル</th>
+              <th className="py-1 text-right font-normal">人数</th>
+              <th className="py-1 text-right font-normal">割合</th>
+            </tr>
+          </thead>
+          <tbody>
+            {[...ascending].reverse().map((b) => (
+              <tr
+                key={b.level}
+                className={`border-t border-line ${
+                  b.level === myLevel ? "font-bold text-brand" : ""
+                }`}
+              >
+                <td className="py-1">
+                  {b.level}
+                  {b.level === myLevel && "（あなた）"}
+                </td>
+                <td className="py-1 text-right tabular-nums">{b.userCount}</td>
+                <td className="py-1 text-right tabular-nums">
+                  {total === 0 ? "—" : `${Math.round((b.userCount / total) * 100)}%`}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </details>
+    </section>
   );
 }

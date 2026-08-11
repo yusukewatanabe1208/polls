@@ -16,6 +16,7 @@ import type {
   AdminReport,
   CommentView,
   DemoCountsView,
+  DistributionBand,
   MyCommentView,
   FavoriteItem,
   FeedItem,
@@ -822,6 +823,21 @@ export async function getUserReport(userId: string): Promise<UserReportView> {
     rankDescription: band?.description ?? null,
     comparedUsers: Number(row.compared_users ?? 0),
   };
+}
+
+/**
+ * 医師全体が10段階のどこに何人いるか（0018）。
+ * 個人が特定できる情報は返らない（人数だけ）。
+ */
+export async function getOrdinarinessDistribution(): Promise<DistributionBand[]> {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase.rpc("get_ordinariness_distribution");
+  if (error || !data) return [];
+
+  return (data as Record<string, unknown>[]).map((r) => ({
+    level: Number(r.level),
+    userCount: Number(r.user_count ?? 0),
+  }));
 }
 
 export async function getRanking(userId: string): Promise<RankingView> {
