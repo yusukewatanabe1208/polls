@@ -56,7 +56,7 @@ async function requireAdmin(): Promise<Profile> {
 
 /**
  * お試しの回答。votes には保存せず Cookie に持つ。
- * 5問に達したらログインを促す画面に送る。
+ * 回答するとその質問の分布を見せ、最後の1問のあとに成績へ進む。
  */
 export async function submitTrialAnswer(formData: FormData) {
   const questionId = String(formData.get("question_id") ?? "");

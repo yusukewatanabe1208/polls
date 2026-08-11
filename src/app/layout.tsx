@@ -35,7 +35,7 @@ export default async function RootLayout({
         */}
         <header className="sticky top-0 z-40 border-b border-line bg-white">
           <div className="mx-auto flex max-w-2xl items-center justify-between gap-3 px-4 py-2.5">
-            <Link href={profile ? "/play" : "/"} className="text-lg font-bold text-brand">
+            <Link href={profile ? "/play" : "/try"} className="text-lg font-bold text-brand">
               診療スタイル診断
             </Link>
             {session ? (
@@ -55,7 +55,7 @@ export default async function RootLayout({
               />
             ) : (
               <Link href="/login" className="btn btn-primary btn-sm">
-                ログイン
+                サインイン
               </Link>
             )}
           </div>

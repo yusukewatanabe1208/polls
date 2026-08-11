@@ -18,11 +18,11 @@ export default async function LoginPage({
   return (
     <div className="mx-auto max-w-md space-y-4">
       <div className="card p-8 text-center">
-        <h1 className="text-xl font-bold">ログイン</h1>
+        <h1 className="text-xl font-bold">サインイン</h1>
 
         {error && (
           <p className="mt-4 rounded-lg bg-red-50 p-3 text-left text-sm text-red-700">
-            ログインに失敗しました：{decodeURIComponent(error)}
+            サインインに失敗しました：{decodeURIComponent(error)}
           </p>
         )}
 
@@ -33,7 +33,7 @@ export default async function LoginPage({
 
       <p className="text-center text-xs text-muted">
         <Link href="/try" className="underline">
-          まず{TRIAL_LIMIT}問ためす（ログイン不要）
+          お試しの{TRIAL_LIMIT}問に戻る（サインイン不要）
         </Link>
       </p>
     </div>

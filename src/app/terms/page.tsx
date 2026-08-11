@@ -139,7 +139,7 @@ export default function TermsPage() {
         本サービスは開発中のため、仕様およびデータは予告なく変更される場合があります。
       </p>
 
-      <Link href="/" className="btn btn-ghost w-full">
+      <Link href="/try" className="btn btn-ghost w-full">
         戻る
       </Link>
     </div>

@@ -524,6 +524,47 @@ select t_ok('削除済みの質問は投稿者にも出ない',
 reset role;
 
 -- =====================================================================
+-- 10. お試しの成績（0027）
+--     未ログイン(anon)から呼べること、まとめて取れることを確かめる
+-- =====================================================================
+\echo '--- 10. お試しの成績 ---'
+set role anon;
+
+select t_ok('未ログインでもお試しの質問を引ける',
+  (select count(*) > 0 from public.get_trial_questions(5)));
+
+select t_ok('未ログインでも複数問の分布をまとめて取れる',
+  (select count(*) = 2 from public.get_trial_results(array[
+    '00000000-0000-0000-0000-0000000f0001'::uuid,
+    '00000000-0000-0000-0000-0000000f0002'::uuid])));
+
+select t_ok('A/Bの合計が回答数と一致する',
+  (select bool_and(a_count + b_count = vote_count)
+   from public.get_trial_results(array[
+     '00000000-0000-0000-0000-0000000f0001'::uuid,
+     '00000000-0000-0000-0000-0000000f0002'::uuid])));
+
+-- 非公開の質問はお試しの成績に出さない
+-- （非公開にする操作は anon ではできないので、いったんロールを戻す）
+reset role;
+update public.questions set status = 'hidden'
+where id = '00000000-0000-0000-0000-0000000f0002'::uuid;
+set role anon;
+select t_ok('非公開の質問は分布を返さない',
+  (select count(*) = 0 from public.get_trial_results(array[
+    '00000000-0000-0000-0000-0000000f0002'::uuid])));
+reset role;
+update public.questions set status = 'active'
+where id = '00000000-0000-0000-0000-0000000f0002'::uuid;
+
+-- お試しでは個票は出さない（誰が何を選んだかは返らない）
+select t_ok('お試しの戻り値に user_id が含まれない',
+  (select count(*) = 0 from information_schema.columns
+   where table_schema = 'public'
+     and column_name = 'user_id'
+     and table_name = 'get_trial_results'));
+
+-- =====================================================================
 -- 結果
 -- =====================================================================
 \set QUIET off

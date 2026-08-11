@@ -342,6 +342,60 @@ export async function getTrialResult(questionId: string): Promise<TrialResult | 
   };
 }
 
+function toTrialResult(voteCount: number, aCount: number, bCount: number) {
+  return {
+    voteCount,
+    aCount,
+    bCount,
+    aRatio: voteCount === 0 ? 0 : (aCount / voteCount) * 100,
+    bRatio: voteCount === 0 ? 0 : (bCount / voteCount) * 100,
+  };
+}
+
+/**
+ * お試しの成績用に、複数の質問の分布をまとめて取る（0027）。
+ * 途中で分布を見せなくなったので、必要なのは最後の1回だけ。
+ *
+ * 0027 がまだ適用されていないDBでも成績が出るよう、
+ * 失敗したときは1問ずつ取る従来のRPCに切り替える。
+ * コードのデプロイとSQLの適用には時間差が出るため、
+ * その間もお試しが空振りしないようにしておく。
+ */
+export async function getTrialResults(
+  ids: string[],
+): Promise<Map<string, TrialResult>> {
+  const map = new Map<string, TrialResult>();
+  if (ids.length === 0) return map;
+
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase.rpc("get_trial_results", {
+    p_ids: ids,
+  });
+
+  if (!error && data) {
+    for (const r of data as Record<string, unknown>[]) {
+      map.set(
+        r.question_id as string,
+        toTrialResult(
+          Number(r.vote_count ?? 0),
+          Number(r.a_count ?? 0),
+          Number(r.b_count ?? 0),
+        ),
+      );
+    }
+    return map;
+  }
+
+  // 0027 未適用の場合はここに来る（1問ずつ・並行して取る）
+  const each = await Promise.all(
+    ids.map(async (id) => [id, await getTrialResult(id)] as const),
+  );
+  for (const [id, result] of each) {
+    if (result) map.set(id, result);
+  }
+  return map;
+}
+
 export async function getQuestionResult(
   questionId: string,
   _userId: string,

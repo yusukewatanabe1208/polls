@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { TrialVoteForm } from "@/components/TrialVoteForm";
 import { categoryName } from "@/lib/master";
+import { displayScore } from "@/lib/metrics";
 import { repo, type TrialQuestion, type TrialResult } from "@/lib/repo";
 import { TRIAL_LIMIT, getTrialAnswers, type TrialAnswer } from "@/lib/trial";
 import type { Choice } from "@/lib/types";
@@ -9,8 +10,11 @@ import type { Choice } from "@/lib/types";
 export const dynamic = "force-dynamic";
 
 /**
- * ログインなしのお試し（5問）。
- * 回答はCookieにだけ持ち、5問終わったらログインしてもらう。
+ * サインインなしのお試し（5問）。トップ画面は置かず、ここが入口。
+ *
+ * 1問ごとに回答 → その質問の分布を見せる → 次の質問、と進み、
+ * 5問すべて終わったところで成績を出す。
+ * 回答はCookieにだけ持ち、votes には保存しない。
  */
 export default async function TryPage({
   searchParams,
@@ -29,55 +33,58 @@ export default async function TryPage({
 
   if (questions.length === 0) {
     return (
-      <Wall
-        answers={[]}
-        results={[]}
-        message="いま出せる質問がありません。ログインすると全ての質問に回答できます。"
-      />
+      <SignInWall message="いま出せる質問がありません。サインインすると全ての質問に回答できます。" />
     );
   }
 
-  // 回答直後：その質問の分布を見せる
+  const total = Math.min(TRIAL_LIMIT, questions.length);
+
+  // 回答した直後：その質問の分布を見せる（成績の判定より先に見る）
   const shown = show ? questions.find((q) => q.id === show) : undefined;
   const shownAnswer = shown ? answers.find((a) => a.id === shown.id) : undefined;
   if (shown && shownAnswer) {
     const result = await repo.getTrialResult(shown.id);
-    const done = answers.length >= Math.min(TRIAL_LIMIT, questions.length);
+    const done = answers.length >= total;
     return (
       <div className="space-y-4">
-        <Progress done={answers.length} total={questions.length} />
+        <Progress done={answers.length} total={total} />
         <article className="card p-5">
           <QuestionBody question={shown} />
           {result ? (
-            <Distribution question={shown} result={result} myChoice={shownAnswer.choice} />
+            <Distribution
+              question={shown}
+              result={result}
+              myChoice={shownAnswer.choice}
+            />
           ) : (
             <p className="mt-4 text-sm text-muted">分布を取得できませんでした。</p>
           )}
         </article>
 
-        <p className="px-1 text-center text-sm text-muted">
-          ログインすると、あなたの「普通度」と他の医師のコメントが見られます。
-        </p>
-
         <Link href="/try" className="btn btn-primary w-full">
-          {done ? "結果を見る →" : "次の質問へ →"}
+          {done ? "成績を見る →" : "次の質問へ →"}
         </Link>
+        {!done && (
+          <p className="px-1 text-center text-sm text-muted">
+            あと{total - answers.length}問で成績が出ます。
+          </p>
+        )}
       </div>
     );
   }
 
-  // 5問終わったらログインへ
-  const total = Math.min(TRIAL_LIMIT, questions.length);
+  // 全問終わったら成績を出す
   if (answers.length >= total) {
-    const results = await Promise.all(
-      answers.map((a) => repo.getTrialResult(a.id)),
-    );
-    return <Wall answers={answers} results={results} />;
+    const results = await repo.getTrialResults(answers.map((a) => a.id));
+    return <TrialReport questions={questions} answers={answers} results={results} />;
   }
 
-  // 次の未回答の質問
+  // 次の未回答の質問へ。無ければ成績へ
   const current = questions.find((q) => !answers.some((a) => a.id === q.id));
-  if (!current) redirect("/try?show=" + answers[answers.length - 1].id);
+  if (!current) {
+    const results = await repo.getTrialResults(answers.map((a) => a.id));
+    return <TrialReport questions={questions} answers={answers} results={results} />;
+  }
 
   return (
     <div className="space-y-4">
@@ -91,7 +98,8 @@ export default async function TryPage({
         />
       </article>
       <p className="px-1 text-center text-sm text-muted">
-        ログインなしで{total}問まで試せます。回答すると他の医師の選択が表示されます。
+        回答すると他の医師の選択が表示されます。
+        {total}問すべてに答えると成績が出ます（あと{total - answers.length}問）。
       </p>
     </div>
   );
@@ -101,12 +109,14 @@ function Progress({ done, total }: { done: number; total: number }) {
   return (
     <section>
       <div className="flex items-center justify-between text-sm text-muted">
-        <span>お試し {Math.min(done, total)}/{total}問</span>
-        <span>ログイン不要</span>
+        <span>
+          お試し {Math.min(done, total)}/{total}問
+        </span>
+        <span>サインイン不要</span>
       </div>
       <div className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-slate-200">
         <div
-          className="h-full bg-brand"
+          className="h-full bg-brand transition-[width]"
           style={{ width: `${(Math.min(done, total) / total) * 100}%` }}
         />
       </div>
@@ -132,6 +142,188 @@ function QuestionBody({ question }: { question: TrialQuestion }) {
   );
 }
 
+/**
+ * お試しの成績。
+ *
+ * 普通度＝各問で「自分と同じ選択をした人の割合」の平均。
+ * ここでの母集団はその質問に答えた全員で、回答数の下限も設けていない。
+ * 正式な普通度（医師のみ・本人以外20人以上・直近重視の加重平均）とは
+ * 定義が違うため、偏差値やランクはお試しでは出さない。
+ */
+function TrialReport({
+  questions,
+  answers,
+  results,
+}: {
+  questions: TrialQuestion[];
+  answers: TrialAnswer[];
+  results: Map<string, TrialResult>;
+}) {
+  const rows = answers.map((a) => {
+    const question = questions.find((q) => q.id === a.id);
+    const result = results.get(a.id);
+    const sameCount = !result
+      ? 0
+      : a.choice === "A"
+        ? result.aCount
+        : result.bCount;
+    const agreementRate =
+      !result || result.voteCount === 0
+        ? null
+        : (sameCount / result.voteCount) * 100;
+    const majority =
+      !result || result.aCount === result.bCount
+        ? null
+        : result.aCount > result.bCount
+          ? "A"
+          : "B";
+    return { answer: a, question, result, agreementRate, majority };
+  });
+
+  const rated = rows.filter((r) => r.agreementRate !== null);
+  const ordinariness =
+    rated.length === 0
+      ? null
+      : rated.reduce((s, r) => s + (r.agreementRate ?? 0), 0) / rated.length;
+
+  const withMajority = rows.filter((r) => r.majority !== null);
+  const majorityMatched = withMajority.filter(
+    (r) => r.majority === r.answer.choice,
+  ).length;
+
+  return (
+    <div className="space-y-5">
+      <header className="text-center">
+        <h1 className="text-2xl font-bold">お試しの成績</h1>
+        <p className="mt-1 text-sm text-muted">
+          {answers.length}問すべてに回答しました。
+        </p>
+      </header>
+
+      {/* 普通度 */}
+      <section className="card p-6 text-center">
+        <p className="text-sm text-muted">あなたの普通度（お試し）</p>
+        <p className="mt-1 text-6xl font-bold leading-none tracking-tight">
+          {displayScore(ordinariness)}
+          {ordinariness !== null && (
+            <span className="ml-1 align-baseline text-2xl font-semibold">%</span>
+          )}
+        </p>
+        <p className="mt-3 text-sm text-muted">
+          {ordinariness === null
+            ? "まだ他の回答が集まっていないため計算できませんでした。"
+            : `回答した${rated.length}問で、平均して${displayScore(
+                ordinariness,
+              )}%の人があなたと同じ選択をしていました。`}
+        </p>
+
+        {withMajority.length > 0 && (
+          <p className="mt-4 border-t border-line pt-4 text-sm text-muted">
+            多数派と同じ判断だったのは
+            <span className="mx-1 text-2xl font-bold text-brand tabular-nums">
+              {majorityMatched}
+            </span>
+            /{withMajority.length}問
+          </p>
+        )}
+
+        <Link href="/login" className="btn btn-primary mt-6 w-full">
+          サインイン
+        </Link>
+        <p className="mt-3 text-xs text-muted">
+          サインインすると、すべての質問に回答でき、
+          医師だけを母集団にした正式な普通度・偏差値・ランクと、
+          他の医師のコメントが見られます。
+        </p>
+      </section>
+
+      {/* 1問ずつの結果 */}
+      <section className="space-y-3">
+        <h2 className="text-lg font-bold">回答した質問</h2>
+        {rows.map((r, i) => (
+          <article key={r.answer.id} className="card p-4">
+            <div className="flex items-center gap-2 text-xs">
+              <span className="rounded-full bg-slate-100 px-2 py-0.5 font-semibold text-slate-700">
+                {i + 1}問目
+              </span>
+              {r.question && (
+                <span className="rounded-full bg-brand-soft px-2 py-0.5 text-brand">
+                  {categoryName(r.question.category_id)}
+                </span>
+              )}
+            </div>
+
+            <p className="mt-2 whitespace-pre-wrap text-sm leading-6">
+              {r.question?.question_text ?? "（質問を取得できませんでした）"}
+            </p>
+
+            <div className="mt-2.5 flex flex-wrap items-center gap-2 text-xs">
+              <span className="rounded-full bg-brand-soft px-2.5 py-1 font-semibold text-brand">
+                あなた：{r.answer.choice}
+                {r.question &&
+                  `（${
+                    r.answer.choice === "A"
+                      ? r.question.option_a
+                      : r.question.option_b
+                  }）`}
+              </span>
+              {r.agreementRate === null ? (
+                <span className="text-muted">回答がまだありません</span>
+              ) : (
+                <>
+                  <span className="font-semibold tabular-nums">
+                    同じ回答 {Math.round(r.agreementRate)}%
+                  </span>
+                  {r.majority === null ? (
+                    <span className="text-muted">同数</span>
+                  ) : r.majority === r.answer.choice ? (
+                    <span className="text-emerald-700">多数派</span>
+                  ) : (
+                    <span className="text-amber-700">少数派</span>
+                  )}
+                </>
+              )}
+            </div>
+
+            {r.result && r.result.voteCount > 0 && (
+              <>
+                <div className="mt-2 flex h-2 overflow-hidden rounded-full bg-slate-200">
+                  <div
+                    className="bg-brand"
+                    style={{ width: `${r.result.aRatio}%` }}
+                  />
+                </div>
+                <div className="mt-1 flex justify-between text-xs tabular-nums text-muted">
+                  <span>
+                    {r.question?.option_a ?? "A"} {Math.round(r.result.aRatio)}%
+                  </span>
+                  <span>回答数 {r.result.voteCount.toLocaleString("ja-JP")}</span>
+                  <span>
+                    {r.question?.option_b ?? "B"} {Math.round(r.result.bRatio)}%
+                  </span>
+                </div>
+              </>
+            )}
+          </article>
+        ))}
+      </section>
+
+      <Link href="/login" className="btn btn-primary w-full">
+        サインイン
+      </Link>
+      <p className="text-center text-xs text-muted">
+        お試しの回答は記録されません。サインイン後にあらためて回答してください。
+      </p>
+      <p className="text-center text-sm">
+        <Link href="/about" className="text-brand underline">
+          普通度とは？
+        </Link>
+      </p>
+    </div>
+  );
+}
+
+/** 回答した直後に見せる分布 */
 function Distribution({
   question,
   result,
@@ -142,8 +334,18 @@ function Distribution({
   myChoice: Choice;
 }) {
   const rows = [
-    { key: "A" as const, text: question.option_a, ratio: result.aRatio, count: result.aCount },
-    { key: "B" as const, text: question.option_b, ratio: result.bRatio, count: result.bCount },
+    {
+      key: "A" as const,
+      text: question.option_a,
+      ratio: result.aRatio,
+      count: result.aCount,
+    },
+    {
+      key: "B" as const,
+      text: question.option_b,
+      ratio: result.bRatio,
+      count: result.bCount,
+    },
   ];
 
   return (
@@ -184,63 +386,17 @@ function Distribution({
   );
 }
 
-/** 5問終わり（またはお試しできない）ときのログイン案内 */
-function Wall({
-  answers,
-  results,
-  message,
-}: {
-  answers: TrialAnswer[];
-  results: (TrialResult | null)[];
-  message?: string;
-}) {
-  const majorityMatched = answers.filter((a, i) => {
-    const r = results[i];
-    if (!r || r.aCount === r.bCount) return false;
-    return (r.aCount > r.bCount ? "A" : "B") === a.choice;
-  }).length;
-
+/** お試しの質問が出せないときの案内 */
+function SignInWall({ message }: { message: string }) {
   return (
     <div className="space-y-5">
       <section className="card p-6 text-center">
-        {answers.length > 0 ? (
-          <>
-            <h1 className="text-xl font-bold">
-              お試しの{answers.length}問が終わりました
-            </h1>
-            <p className="mt-3 text-muted">
-              多数派と同じ判断だったのは
-              <span className="mx-1 text-2xl font-bold text-brand">
-                {majorityMatched}
-              </span>
-              /{answers.length}問でした。
-            </p>
-            <p className="mt-3 text-sm text-muted">
-              ログインすると、すべての質問に回答できます。普通度・成績表・他の医師のコメントも見られます。
-            </p>
-          </>
-        ) : (
-          <>
-            <h1 className="text-xl font-bold">ログインして続ける</h1>
-            <p className="mt-3 text-sm text-muted">
-              {message ?? "ログインすると全ての質問に回答できます。"}
-            </p>
-          </>
-        )}
-
+        <h1 className="text-xl font-bold">サインインして続ける</h1>
+        <p className="mt-3 text-sm text-muted">{message}</p>
         <Link href="/login" className="btn btn-primary mt-6 w-full">
-          ログインして続ける
+          サインイン
         </Link>
-        <p className="mt-3 text-xs text-muted">
-          お試しの回答は記録されません。ログイン後にあらためて回答してください。
-        </p>
       </section>
-
-      <p className="text-center text-sm">
-        <Link href="/about" className="text-brand underline">
-          普通度とは？
-        </Link>
-      </p>
     </div>
   );
 }

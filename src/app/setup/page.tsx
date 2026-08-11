@@ -232,7 +232,7 @@ export default async function SetupPage() {
         </ol>
       </div>
 
-      <Link href="/" className="btn btn-ghost">
+      <Link href="/try" className="btn btn-ghost">
         トップへ
       </Link>
     </div>
