@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { ReportView } from "@/components/ReportView";
 import { TrialVoteForm } from "@/components/TrialVoteForm";
 import { categoryName, specialtyName } from "@/lib/master";
-import { displayScore } from "@/lib/metrics";
 import {
   repo,
   type TrialComment,
@@ -83,17 +83,10 @@ export default async function TryPage({
     );
   }
 
-  // 全問終わったら成績を出す
-  if (answers.length >= total) {
-    const results = await repo.getTrialResults(answers.map((a) => a.id));
-    return <TrialReport questions={questions} answers={answers} results={results} />;
-  }
-
-  // 次の未回答の質問へ。無ければ成績へ
+  // 全問終わったら成績を出す（ログイン後の成績表と同じ中身）
   const current = questions.find((q) => !answers.some((a) => a.id === q.id));
-  if (!current) {
-    const results = await repo.getTrialResults(answers.map((a) => a.id));
-    return <TrialReport questions={questions} answers={answers} results={results} />;
+  if (answers.length >= total || !current) {
+    return <TrialReport answers={answers} />;
   }
 
   return (
@@ -149,187 +142,6 @@ function QuestionBody({ question }: { question: TrialQuestion }) {
         {question.question_text}
       </p>
     </>
-  );
-}
-
-/**
- * お試しの成績。
- *
- * 普通度＝各問で「自分と同じ選択をした人の割合」の平均。
- * ここでの母集団はその質問に答えた全員で、回答数の下限も設けていない。
- * 正式な普通度（医師のみ・本人以外20人以上・直近重視の加重平均）とは
- * 定義が違うため、偏差値やランクはお試しでは出さない。
- */
-function TrialReport({
-  questions,
-  answers,
-  results,
-}: {
-  questions: TrialQuestion[];
-  answers: TrialAnswer[];
-  results: Map<string, TrialResult>;
-}) {
-  const rows = answers.map((a) => {
-    const question = questions.find((q) => q.id === a.id);
-    const result = results.get(a.id);
-    const sameCount = !result
-      ? 0
-      : a.choice === "A"
-        ? result.aCount
-        : result.bCount;
-    const agreementRate =
-      !result || result.voteCount === 0
-        ? null
-        : (sameCount / result.voteCount) * 100;
-    const majority =
-      !result || result.aCount === result.bCount
-        ? null
-        : result.aCount > result.bCount
-          ? "A"
-          : "B";
-    return { answer: a, question, result, agreementRate, majority };
-  });
-
-  const rated = rows.filter((r) => r.agreementRate !== null);
-  const ordinariness =
-    rated.length === 0
-      ? null
-      : rated.reduce((s, r) => s + (r.agreementRate ?? 0), 0) / rated.length;
-
-  const withMajority = rows.filter((r) => r.majority !== null);
-  const majorityMatched = withMajority.filter(
-    (r) => r.majority === r.answer.choice,
-  ).length;
-
-  return (
-    <div className="space-y-5">
-      <header className="text-center">
-        <h1 className="text-2xl font-bold">お試しの成績</h1>
-        <p className="mt-1 text-sm text-muted">
-          {answers.length}問すべてに回答しました。
-        </p>
-      </header>
-
-      {/* 普通度 */}
-      <section className="card p-6 text-center">
-        <p className="text-sm text-muted">あなたの普通度（お試し）</p>
-        <p className="mt-1 text-6xl font-bold leading-none tracking-tight">
-          {displayScore(ordinariness)}
-          {ordinariness !== null && (
-            <span className="ml-1 align-baseline text-2xl font-semibold">%</span>
-          )}
-        </p>
-        <p className="mt-3 text-sm text-muted">
-          {ordinariness === null
-            ? "まだ他の回答が集まっていないため計算できませんでした。"
-            : `回答した${rated.length}問で、平均して${displayScore(
-                ordinariness,
-              )}%の人があなたと同じ選択をしていました。`}
-        </p>
-
-        {withMajority.length > 0 && (
-          <p className="mt-4 border-t border-line pt-4 text-sm text-muted">
-            多数派と同じ判断だったのは
-            <span className="mx-1 text-2xl font-bold text-brand tabular-nums">
-              {majorityMatched}
-            </span>
-            /{withMajority.length}問
-          </p>
-        )}
-
-        <Link href="/login" className="btn btn-primary mt-6 w-full">
-          サインイン
-        </Link>
-        <p className="mt-3 text-xs text-muted">
-          サインインすると、すべての質問に回答でき、
-          医師だけを母集団にした正式な普通度・偏差値・ランクと、
-          他の医師のコメントが見られます。
-        </p>
-      </section>
-
-      {/* 1問ずつの結果 */}
-      <section className="space-y-3">
-        <h2 className="text-lg font-bold">回答した質問</h2>
-        {rows.map((r, i) => (
-          <article key={r.answer.id} className="card p-4">
-            <div className="flex items-center gap-2 text-xs">
-              <span className="rounded-full bg-slate-100 px-2 py-0.5 font-semibold text-slate-700">
-                {i + 1}問目
-              </span>
-              {r.question && (
-                <span className="rounded-full bg-brand-soft px-2 py-0.5 text-brand">
-                  {categoryName(r.question.category_id)}
-                </span>
-              )}
-            </div>
-
-            <p className="mt-2 whitespace-pre-wrap text-sm leading-6">
-              {r.question?.question_text ?? "（質問を取得できませんでした）"}
-            </p>
-
-            <div className="mt-2.5 flex flex-wrap items-center gap-2 text-xs">
-              <span className="rounded-full bg-brand-soft px-2.5 py-1 font-semibold text-brand">
-                あなた：{r.answer.choice}
-                {r.question &&
-                  `（${
-                    r.answer.choice === "A"
-                      ? r.question.option_a
-                      : r.question.option_b
-                  }）`}
-              </span>
-              {r.agreementRate === null ? (
-                <span className="text-muted">回答がまだありません</span>
-              ) : (
-                <>
-                  <span className="font-semibold tabular-nums">
-                    同じ回答 {Math.round(r.agreementRate)}%
-                  </span>
-                  {r.majority === null ? (
-                    <span className="text-muted">同数</span>
-                  ) : r.majority === r.answer.choice ? (
-                    <span className="text-emerald-700">多数派</span>
-                  ) : (
-                    <span className="text-amber-700">少数派</span>
-                  )}
-                </>
-              )}
-            </div>
-
-            {r.result && r.result.voteCount > 0 && (
-              <>
-                <div className="mt-2 flex h-2 overflow-hidden rounded-full bg-slate-200">
-                  <div
-                    className="bg-brand"
-                    style={{ width: `${r.result.aRatio}%` }}
-                  />
-                </div>
-                <div className="mt-1 flex justify-between text-xs tabular-nums text-muted">
-                  <span>
-                    {r.question?.option_a ?? "A"} {Math.round(r.result.aRatio)}%
-                  </span>
-                  <span>回答数 {r.result.voteCount.toLocaleString("ja-JP")}</span>
-                  <span>
-                    {r.question?.option_b ?? "B"} {Math.round(r.result.bRatio)}%
-                  </span>
-                </div>
-              </>
-            )}
-          </article>
-        ))}
-      </section>
-
-      <Link href="/login" className="btn btn-primary w-full">
-        サインイン
-      </Link>
-      <p className="text-center text-xs text-muted">
-        お試しの回答は記録されません。サインイン後にあらためて回答してください。
-      </p>
-      <p className="text-center text-sm">
-        <Link href="/about" className="text-brand underline">
-          普通度とは？
-        </Link>
-      </p>
-    </div>
   );
 }
 
@@ -482,5 +294,44 @@ function SignInWall({ message }: { message: string }) {
         </Link>
       </section>
     </div>
+  );
+}
+
+/**
+ * お試しの成績。ログイン後の成績表とまったく同じ中身を出す。
+ *
+ * 計算も正式な定義と同じ（医師のみ・本人以外が規定数以上・直近重視の加重平均、
+ * 偏差値は同じ母集団のスナップショットから）。0031 のRPCが担当する。
+ * 違うのは、回答履歴から質問を開けない点（サインイン前のため）と、
+ * 下に置くボタンがサインインである点だけ。
+ */
+async function TrialReport({ answers }: { answers: TrialAnswer[] }) {
+  const [report, details, distribution, minOtherVotes] = await Promise.all([
+    repo.getTrialReport(answers),
+    repo.getTrialAnswerDetails(answers),
+    repo.getOrdinarinessDistribution(),
+    repo.getMinOtherVotes(),
+  ]);
+
+  return (
+    <ReportView
+      report={report}
+      answers={details}
+      distribution={distribution}
+      minOtherVotes={minOtherVotes}
+      subtitle={`お試しの${answers.length}問が終わりました。`}
+      footer={
+        <div className="space-y-3">
+          <Link href="/login" className="btn btn-primary w-full">
+            サインイン
+          </Link>
+          <p className="text-center text-xs text-muted">
+            サインインすると、すべての質問に回答でき、
+            他の医師のコメントも読めます。
+            お試しの回答は記録されないため、あらためて回答してください。
+          </p>
+        </div>
+      }
+    />
   );
 }

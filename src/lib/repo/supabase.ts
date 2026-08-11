@@ -427,6 +427,84 @@ export async function getTrialResults(
   return map;
 }
 
+/**
+ * お試しの成績（0031）。ログイン後の getUserReport と同じ定義・同じ形。
+ * 対象はお試しの5問だけにDB側で縛られている。
+ */
+export async function getTrialReport(
+  answers: { id: string; choice: string }[],
+): Promise<UserReportView> {
+  const empty: UserReportView = {
+    ordinariness: null,
+    majority_agreement_rate: null,
+    eligible_question_count: 0,
+    answered_question_count: 0,
+    posted_question_count: 0,
+    deviation: null,
+    percentile: null,
+    rankLevel: null,
+    rankLabel: null,
+    rankDescription: null,
+    comparedUsers: 0,
+  };
+  if (answers.length === 0) return empty;
+
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase.rpc("get_trial_report", {
+    p_ids: answers.map((a) => a.id),
+    p_choices: answers.map((a) => a.choice),
+  });
+  const r = (data as Record<string, unknown>[] | null)?.[0];
+  if (error || !r) return empty;
+
+  const deviation = r.deviation === null ? null : Number(r.deviation);
+  const band = deviation === null ? null : rankFromDeviation(deviation);
+
+  return {
+    ordinariness: r.ordinariness === null ? null : Number(r.ordinariness),
+    majority_agreement_rate:
+      r.majority_agreement_rate === null
+        ? null
+        : Number(r.majority_agreement_rate),
+    eligible_question_count: Number(r.eligible_question_count ?? 0),
+    answered_question_count: Number(r.answered_question_count ?? 0),
+    posted_question_count: 0,
+    deviation,
+    percentile: r.percentile === null ? null : Number(r.percentile),
+    rankLevel: band?.level ?? null,
+    rankLabel: band?.label ?? null,
+    rankDescription: band?.description ?? null,
+    comparedUsers: Number(r.compared_users ?? 0),
+  };
+}
+
+/** お試しの回答履歴（0031）。ログイン後の getRecentAnswers と同じ形 */
+export async function getTrialAnswerDetails(
+  answers: { id: string; choice: string }[],
+): Promise<RecentAnswerView[]> {
+  if (answers.length === 0) return [];
+
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase.rpc("get_trial_answer_details", {
+    p_ids: answers.map((a) => a.id),
+    p_choices: answers.map((a) => a.choice),
+  });
+  if (error || !data) return [];
+
+  return (data as Record<string, unknown>[]).map((r) => ({
+    questionId: r.question_id as string,
+    questionText: r.question_text as string,
+    optionA: r.option_a as string,
+    optionB: r.option_b as string,
+    myChoice: r.my_choice as Choice,
+    agreementRate:
+      r.agreement_rate === null ? null : Number(r.agreement_rate),
+    majorityMatched:
+      r.majority_matched === null ? null : Boolean(r.majority_matched),
+    eligible: Boolean(r.eligible),
+  }));
+}
+
 export async function getQuestionResult(
   questionId: string,
   _userId: string,
