@@ -10,16 +10,28 @@ import {
   purgeAllDemoDataAction,
   purgeDemoVotesAction,
 } from "@/app/actions";
+import { AdminMetrics } from "@/components/AdminMetrics";
 import { specialtyName } from "@/lib/master";
 import { repo } from "@/lib/repo";
 
-export default async function AdminPage() {
+const METRIC_RANGES = [7, 30, 90];
+
+export default async function AdminPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ days?: string }>;
+}) {
   const session = await repo.getSession();
   if (!session) redirect("/login");
   if (!session.profile) redirect("/onboarding");
   if (!session.profile.is_admin) redirect("/feed");
 
-  const [reports, questions, profiles, comments, min, demo, feedback] =
+  const { days: daysParam } = await searchParams;
+  const days = METRIC_RANGES.includes(Number(daysParam))
+    ? Number(daysParam)
+    : 30;
+
+  const [reports, questions, profiles, comments, min, demo, feedback, totals, daily] =
     await Promise.all([
     repo.adminGetReports(),
     repo.adminGetQuestions(),
@@ -28,11 +40,15 @@ export default async function AdminPage() {
     repo.getMinOtherVotes(),
     repo.getDemoCounts(),
     repo.getFeedback(100),
+    repo.getAdminTotals(),
+    repo.getAdminDaily(days),
   ]);
 
   return (
     <div className="space-y-6">
       <h1 className="text-xl font-bold">管理画面</h1>
+
+      <AdminMetrics totals={totals} daily={daily} days={days} />
 
       <section className="card p-5">
         <h2 className="font-semibold">指標設定</h2>

@@ -11,6 +11,8 @@ import type {
 } from "../types";
 import type {
   AdminComment,
+  AdminDaily,
+  AdminTotals,
   AuthoredQuestion,
   AdminQuestion,
   AdminReport,
@@ -871,6 +873,64 @@ export async function getRanking(userId: string): Promise<RankingView> {
     rankDescription: band.description,
     comparedUsers: Number(row.compared_users ?? 0),
   };
+}
+
+/* ---------------------------- 管理画面の指標 ------------------------ */
+
+const EMPTY_TOTALS: AdminTotals = {
+  totalUsers: 0,
+  totalQuestions: 0,
+  totalVotes: 0,
+  totalComments: 0,
+  votesPerUser: 0,
+  active7d: 0,
+  active30d: 0,
+  newUsers7d: 0,
+  newUsers30d: 0,
+  newQuestions7d: 0,
+  demoUsers: 0,
+  demoVotes: 0,
+};
+
+/** 全体の要約。管理者以外には行が返らない（0030） */
+export async function getAdminTotals(): Promise<AdminTotals> {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase.rpc("get_admin_totals");
+  const r = (data as Record<string, unknown>[] | null)?.[0];
+  if (error || !r) return EMPTY_TOTALS;
+
+  return {
+    totalUsers: Number(r.total_users ?? 0),
+    totalQuestions: Number(r.total_questions ?? 0),
+    totalVotes: Number(r.total_votes ?? 0),
+    totalComments: Number(r.total_comments ?? 0),
+    votesPerUser: Number(r.votes_per_user ?? 0),
+    active7d: Number(r.active_7d ?? 0),
+    active30d: Number(r.active_30d ?? 0),
+    newUsers7d: Number(r.new_users_7d ?? 0),
+    newUsers30d: Number(r.new_users_30d ?? 0),
+    newQuestions7d: Number(r.new_questions_7d ?? 0),
+    demoUsers: Number(r.demo_users ?? 0),
+    demoVotes: Number(r.demo_votes ?? 0),
+  };
+}
+
+/** 日ごとの推移（0030） */
+export async function getAdminDaily(days: number): Promise<AdminDaily[]> {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase.rpc("get_admin_daily", {
+    p_days: days,
+  });
+  if (error || !data) return [];
+
+  return (data as Record<string, unknown>[]).map((r) => ({
+    day: r.day as string,
+    newUsers: Number(r.new_users ?? 0),
+    activeUsers: Number(r.active_users ?? 0),
+    votes: Number(r.votes ?? 0),
+    newQuestions: Number(r.new_questions ?? 0),
+    totalUsers: Number(r.total_users ?? 0),
+  }));
 }
 
 /* ---------------------------- 運営への要望 -------------------------- */

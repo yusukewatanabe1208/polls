@@ -124,6 +124,33 @@ export type FeedbackView = {
   authorUsername: string;
 };
 
+/** 管理画面の要約（0030） */
+export type AdminTotals = {
+  totalUsers: number;
+  totalQuestions: number;
+  totalVotes: number;
+  totalComments: number;
+  votesPerUser: number;
+  active7d: number;
+  active30d: number;
+  newUsers7d: number;
+  newUsers30d: number;
+  newQuestions7d: number;
+  /** 参考値。指標本体には含めていないデモの件数 */
+  demoUsers: number;
+  demoVotes: number;
+};
+
+/** 管理画面の日次推移（0030） */
+export type AdminDaily = {
+  day: string;
+  newUsers: number;
+  activeUsers: number;
+  votes: number;
+  newQuestions: number;
+  totalUsers: number;
+};
+
 export type AdminQuestion = Question & {
   authorUsername: string;
   voteCount: number | null;
